@@ -1,1 +1,359 @@
-hello
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Off-Plan ROI Calculator</title>
+    <style>
+        :root {
+            --background-color: #f8f9fa;
+            --container-bg: #ffffff;
+            --input-bg: #f8f9fa;
+            --border-color: #dee2e6;
+            --text-primary: #212529;
+            --text-secondary: #6c757d;
+            --accent-blue: #0d6efd;
+            --accent-green: #198754;
+            --accent-gold: #ffc107;
+            /* --button-bg: #c7a468; */
+            --button-bg: #212121;
+            --button-hover-bg: #393939;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            justify-content: center;
+        }
+
+        .calculator-wrapper { max-width: 900px; width: 100%; }
+        .calculator-header { text-align: center; margin-bottom: 2rem; }
+        .calculator-header h1 { font-size: 1.8rem; color: var(--text-primary); }
+        .calculator-header p { font-size: 1rem; color: var(--text-secondary); }
+
+        .input-container, .output-container {
+            background-color: var(--container-bg);
+            padding: 2.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        
+        .output-container { margin-top: 2rem; }
+
+        h2 { font-weight: 600; font-size: 1.25rem; margin-top: 2rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; }
+        h2:first-of-type { margin-top: 0; }
+        
+        .section-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem 2rem; }
+        .input-group { display: flex; flex-direction: column; }
+        .input-group label { color: var(--text-secondary); margin-bottom: 0.5rem; font-size: 0.9rem; }
+        .input-group input[type="number"] {
+            background-color: var(--input-bg); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 12px; font-size: 1rem; width: 100%; box-sizing: border-box;
+        }
+        input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; background: #e9ecef; outline: none; border-radius: 3px; margin-top: 1rem; accent-color: black; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; background: var(--accent-blue); cursor: pointer; border-radius: 50%; accent-color: black; }
+
+        .calculate-btn { width: 100%; background-color: var(--button-bg); color: white; padding: 1rem; font-size: 1.2rem; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; transition: background-color 0.2s; margin-top: 2.5rem; }
+        .calculate-btn:hover { background-color: var(--button-hover-bg); }
+
+        .tabs { display: flex; justify-content: center; gap: 0.5rem; border: 1px solid var(--border-color); border-radius: 8px; padding: 0.5rem; background-color: var(--input-bg); margin-bottom: 2rem; }
+        .tab-btn { flex: 1; padding: 0.8rem 1rem; cursor: pointer; background: none; border: none; color: var(--text-secondary); font-size: 1rem; font-weight: 500; border-radius: 6px; transition: background-color 0.2s, color 0.2s; }
+        .tab-btn.active { color: var(--text-primary); background-color: var(--container-bg); box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.5s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .results-top-grid, .results-bottom-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
+        .results-bottom-grid { grid-template-columns: 1fr 1fr; margin-top: 2rem; }
+        .metric-card, .breakdown-box { background-color: var(--container-bg); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border-color); }
+        .metric-card .label { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.25rem; }
+        .metric-card .value { font-size: 1.75rem; font-weight: 600; }
+        .metric-card .note { font-size: 0.8rem; color: var(--text-secondary); }
+
+        .profit-section { background-color: #1e293b; color: white; padding: 2rem; border-radius: 8px; margin: 2rem 0; display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 2rem; }
+        .profit-section .total-profit .label { font-size: 1rem; opacity: 0.8; }
+        .profit-section .total-profit .value { font-size: 2.5rem; font-weight: 700; }
+        .profit-section .roi-breakdown .label { font-weight: 600; margin-bottom: 0.5rem; }
+        .profit-section .roi-breakdown .item { font-size: 0.9rem; opacity: 0.9; }
+
+        .breakdown-box h3 { font-size: 1.1rem; margin-top: 0; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); }
+        .breakdown-list-item { display: flex; justify-content: space-between; padding: 0.75rem 0; font-size: 0.95rem; border-bottom: 1px solid #f8f9fa; }
+        .breakdown-list-item:last-child { border-bottom: none; }
+        .breakdown-list-item .value { font-weight: 600; }
+        .breakdown-list-item.total { font-weight: 700; color: var(--text-primary); border-top: 2px solid var(--border-color); margin-top: 0.5rem; }
+        .returns-list .value.negative { color: #dc3545; }
+
+        .payment-timeline { position: relative; padding: 1rem 0; }
+        .payment-timeline::before { content: ''; position: absolute; left: 20px; top: 0; bottom: 0; width: 3px; background-color: #e9ecef; }
+        .timeline-item { position: relative; padding: 0.5rem 0 1.5rem 60px; }
+        .timeline-item::before { content: ''; position: absolute; left: 10px; top: 10px; width: 23px; height: 23px; background-color: #ced4da; border-radius: 50%; border: 3px solid var(--container-bg); }
+        .timeline-item.milestone::before { background-color: var(--accent-gold); }
+        .timeline-item .title { font-weight: 600; }
+        .timeline-item .amount { font-size: 1.1rem; font-weight: 600; color: var(--accent-blue); }
+        .timeline-item .note { font-size: 0.85rem; color: var(--text-secondary); }
+
+    </style>
+</head>
+<body>
+<div class="calculator-wrapper">
+    <div class="calculator-header">
+        <!-- <p>Estimate your potential return on investment for Dubai properties</p> -->
+    </div>
+
+    <div class="input-container">
+        <h2>Property Details</h2>
+        <div class="section-grid">
+            <div class="input-group"><label>Property Price (AED)</label><input type="number" id="propertyPrice" value="10000000"></div>
+            <div class="input-group"><label>Size in Sq. Ft.</label><input type="number" id="sizeSqFt" value="800"></div>
+            <div class="input-group"><label>Annual Rent Income (AED)</label><input type="number" id="annualRent" value="100000"></div>
+            <div class="input-group"><label>Service Cost per Sq. Ft. per Year</label><input type="number" id="serviceCostPerSqFt" value="15"></div>
+            <div class="input-group"><label>Extra Costs (Annual)</label><input type="number" id="extraCosts" value="50000"></div>
+        </div>
+
+        <h2>Payment Structure</h2>
+        <div class="section-grid">
+            <div class="input-group"><label>Downpayment (%)</label><input type="number" id="downpaymentPercent" value="38" min="0" max="100"><input type="range" id="downpaymentPercentSlider" value="38" min="0" max="100"></div>
+            <div class="input-group"><label>Percentage Paid by Handover (%)</label><input type="number" id="percentPaidByHandover" value="51" min="0" max="100"><input type="range" id="percentPaidByHandoverSlider" value="51" min="0" max="100"></div>
+            <div class="input-group"><label>Years Until Handover</label><input type="number" id="yearsUntilHandover" value="4" min="0"><input type="range" id="yearsUntilHandoverSlider" value="4" min="0" max="20"></div>
+            <div class="input-group"><label>Post-Handover Payment Years</label><input type="number" id="postHandoverPaymentYears" value="5" min="0"><input type="range" id="postHandoverPaymentYearsSlider" value="5" min="0" max="10"></div>
+        </div>
+
+        <h2>Investment Performance</h2>
+        <div class="section-grid">
+            <div class="input-group"><label>Average Area Appreciation Rate (%)</label><input type="number" id="appreciationRate" value="2.2" min="0" step="0.1"><input type="range" id="appreciationRateSlider" value="2.2" min="0" max="20" step="0.1"></div>
+            <div class="input-group"><label>How Many Years Will You Hold the Property?</label><input type="number" id="holdingPeriod" value="7"></div>
+            <div class="input-group"><label>Dubai Land Department (DLD) Fees (%)</label><input type="number" id="dldPercent" value="4"></div>
+            <div class="input-group"><label>Exit Costs (%)</label><input type="number" id="exitCostsPercent" value="2"></div>
+        </div>
+        <button class="calculate-btn" id="calculateBtn">Calculate ROI</button>
+    </div>
+
+    <div class="output-container" id="outputContainer" style="display:none;">
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="results">Results</button>
+            <button class="tab-btn" data-tab="schedule">Schedule</button>
+        </div>
+        <div id="results" class="tab-content active"></div>
+        <div id="schedule" class="tab-content"></div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- UI SETUP ---
+        const setupUI = () => {
+            const tabs = document.querySelectorAll('.tab-btn');
+            const tabContents = document.querySelectorAll('.tab-content');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(item => item.classList.remove('active'));
+                    tab.classList.add('active');
+                    const target = document.getElementById(tab.dataset.tab);
+                    tabContents.forEach(content => content.classList.remove('active'));
+                    target.classList.add('active');
+                });
+            });
+
+            const syncPairs = [
+                ['downpaymentPercent', 'downpaymentPercentSlider'], ['percentPaidByHandover', 'percentPaidByHandoverSlider'],
+                ['yearsUntilHandover', 'yearsUntilHandoverSlider'], ['postHandoverPaymentYears', 'postHandoverPaymentYearsSlider'],
+                ['appreciationRate', 'appreciationRateSlider'] 
+            ];
+            syncPairs.forEach(([numberId, sliderId]) => {
+                const numberInput = document.getElementById(numberId);
+                const sliderInput = document.getElementById(sliderId);
+                if(numberInput && sliderInput) {
+                    numberInput.addEventListener('input', () => sliderInput.value = numberInput.value);
+                    sliderInput.addEventListener('input', () => numberInput.value = sliderInput.value);
+                }
+            });
+        };
+        setupUI();
+        document.getElementById('calculateBtn').addEventListener('click', calculateAndDisplay);
+    });
+
+    // --- MAIN FUNCTION ---
+    function calculateAndDisplay() {
+        const inputs = gatherInputs();
+        if (!validateInputs(inputs)) return;
+
+        const results = runSimulation(inputs);
+        displayResults(results, inputs);
+        displaySchedule(results, inputs);
+        
+        document.getElementById('outputContainer').style.display = 'block';
+        document.getElementById('outputContainer').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function gatherInputs() {
+        const ids = ['propertyPrice', 'sizeSqFt', 'annualRent', 'serviceCostPerSqFt', 'extraCosts', 'downpaymentPercent', 'percentPaidByHandover', 'yearsUntilHandover', 'postHandoverPaymentYears', 'appreciationRate', 'holdingPeriod', 'dldPercent', 'exitCostsPercent'];
+        const inputs = {};
+        ids.forEach(id => inputs[id] = parseFloat(document.getElementById(id).value));
+        return inputs;
+    }
+
+    function validateInputs(inputs) {
+        if (Object.values(inputs).some(isNaN)) {
+            alert("Please ensure all fields are filled with valid numbers.");
+            return false;
+        }
+        if (inputs.holdingPeriod < inputs.yearsUntilHandover) {
+            alert("Holding period must be greater than or equal to the years until handover.");
+            return false;
+        }
+        if (inputs.percentPaidByHandover < inputs.downpaymentPercent) {
+             alert("Percentage paid by handover cannot be less than the downpayment.");
+            return false;
+        }
+        return true;
+    }
+
+    // --- CORE SIMULATION ENGINE ---
+    function runSimulation(inputs) {
+        // Calculations
+        const dldFeeAmount = inputs.propertyPrice * (inputs.dldPercent / 100);
+        const downpaymentAmount = inputs.propertyPrice * (inputs.downpaymentPercent / 100);
+        const totalPaidByHandover = inputs.propertyPrice * (inputs.percentPaidByHandover / 100);
+        const constructionPaymentsTotal = totalPaidByHandover - downpaymentAmount;
+        const annualConstructionPayment = inputs.yearsUntilHandover > 0 ? constructionPaymentsTotal / inputs.yearsUntilHandover : 0;
+        const remainingBalance = inputs.propertyPrice - totalPaidByHandover;
+        const annualPostHandoverPayment = inputs.postHandoverPaymentYears > 0 ? remainingBalance / inputs.postHandoverPaymentYears : 0;
+        
+        let timeline = [];
+        let previousValue = inputs.propertyPrice;
+        let cumulativeCashPaid = 0;
+        let cumulativeNetRent = 0;
+
+        for (let year = 1; year <= inputs.holdingPeriod; year++) {
+            const propertyValue = previousValue * (1 + (inputs.appreciationRate / 100));
+            let paymentThisYear = 0;
+            if (year === 1) paymentThisYear += downpaymentAmount;
+            if (year > 0 && year <= inputs.yearsUntilHandover) paymentThisYear += annualConstructionPayment;
+            if (year > inputs.yearsUntilHandover && year <= inputs.yearsUntilHandover + inputs.postHandoverPaymentYears) paymentThisYear += annualPostHandoverPayment;
+            
+            let netRentThisYear = 0;
+            if (year > inputs.yearsUntilHandover) {
+                const annualServiceCharge = inputs.sizeSqFt * inputs.serviceCostPerSqFt;
+                netRentThisYear = inputs.annualRent - annualServiceCharge - inputs.extraCosts;
+            }
+
+            cumulativeCashPaid += paymentThisYear;
+            cumulativeNetRent += netRentThisYear;
+            timeline.push({ year, propertyValue, paymentThisYear, netRentThisYear, cumulativeCashPaid });
+            previousValue = propertyValue;
+        }
+
+        const finalPropertyValue = timeline[timeline.length - 1].propertyValue;
+        const totalAppreciation = finalPropertyValue - inputs.propertyPrice;
+        const exitCostAmount = finalPropertyValue * (inputs.exitCostsPercent / 100);
+
+        let balanceOwedAtExit = 0;
+        const postHandoverYearsPassed = inputs.holdingPeriod > inputs.yearsUntilHandover ? inputs.holdingPeriod - inputs.yearsUntilHandover : 0;
+        if(postHandoverYearsPassed < inputs.postHandoverPaymentYears){
+            balanceOwedAtExit = (inputs.postHandoverPaymentYears - postHandoverYearsPassed) * annualPostHandoverPayment;
+        }
+
+        const totalCashInvested = cumulativeCashPaid + dldFeeAmount + (inputs.extraCosts * postHandoverYearsPassed);
+        const totalProfit = totalAppreciation + cumulativeNetRent - dldFeeAmount - (inputs.extraCosts * postHandoverYearsPassed) - exitCostAmount;
+        const totalROI = (totalProfit / totalCashInvested) * 100;
+        const annualizedROI = totalROI / inputs.holdingPeriod;
+        
+        const totalPurchaseCost = inputs.propertyPrice + dldFeeAmount + (inputs.extraCosts * postHandoverYearsPassed);
+        const appreciationROIContribution = (totalAppreciation / totalPurchaseCost) * 100;
+        const rentalROIContribution = (cumulativeNetRent / totalPurchaseCost) * 100;
+
+        return {
+            timeline, dldFeeAmount, exitCostAmount, totalAppreciation, cumulativeNetRent, totalCashInvested, totalProfit, totalROI, annualizedROI, totalPurchaseCost,
+            appreciationROIContribution, rentalROIContribution, downpaymentAmount, annualConstructionPayment, annualPostHandoverPayment
+        };
+    }
+
+    // --- DISPLAY FUNCTIONS ---
+    function displayResults(r, inputs) {
+        const container = document.getElementById('results');
+        const f = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 0 }); // Formatter
+        const f2 = (n) => n.toFixed(2);
+        const rentalYears = inputs.holdingPeriod > inputs.yearsUntilHandover ? inputs.holdingPeriod - inputs.yearsUntilHandover : 0;
+
+        container.innerHTML = `
+            <div class="results-top-grid">
+                <div class="metric-card">
+                    <div class="label">Total Purchase Cost</div><div class="value">AED ${f(r.totalPurchaseCost)}</div><div class="note">Including DLD fees and extra costs</div>
+                </div>
+                <div class="metric-card">
+                    <div class="label">Annual Rental Income</div><div class="value">AED ${f(inputs.annualRent - (inputs.sizeSqFt * inputs.serviceCostPerSqFt))}</div><div class="note">After service charges</div>
+                </div>
+                <div class="metric-card">
+                    <div class="label">Appreciation Value</div><div class="value">AED ${f(r.totalAppreciation)}</div><div class="note">Over ${inputs.holdingPeriod} years</div>
+                </div>
+            </div>
+            <div class="profit-section">
+                <div class="total-profit"><div class="label">Total Profit</div><div class="value">AED ${f(r.totalProfit)}</div><div class="note">After all costs and fees</div></div>
+                <div class="roi-breakdown">
+                    <div class="label">Return on Investment: ${f2(r.totalROI)}%</div>
+                    <div class="item">${f2(r.appreciationROIContribution)}% from appreciation</div>
+                    <div class="item">${f2(r.rentalROIContribution)}% from rental income</div>
+                </div>
+            </div>
+            <div class="results-bottom-grid">
+                <div class="breakdown-box">
+                    <h3>Initial Investment</h3>
+                    <div class="breakdown-list-item"><span>Property Price</span><span class="value">AED ${f(inputs.propertyPrice)}</span></div>
+                    <div class="breakdown-list-item"><span>DLD Fees (${inputs.dldPercent}%)</span><span class="value">AED ${f(r.dldFeeAmount)}</span></div>
+                    <div class="breakdown-list-item"><span>Extra Costs</span><span class="value">AED ${f(inputs.extraCosts)}</span></div>
+                    <div class="breakdown-list-item total"><span>Total Investment</span><span class="value">AED ${f(r.totalPurchaseCost)}</span></div>
+                </div>
+                <div class="breakdown-box returns-list">
+                    <h3>Returns</h3>
+                    <div class="breakdown-list-item"><span>Property Appreciation</span><span class="value">AED ${f(r.totalAppreciation)}</span></div>
+                    <div class="breakdown-list-item"><span>Rental Income (${rentalYears} years)</span><span class="value">AED ${f(r.cumulativeNetRent)}</span></div>
+                    <div class="breakdown-list-item"><span>Exit Costs (${inputs.exitCostsPercent}%)</span><span class="value negative">-AED ${f(r.exitCostAmount)}</span></div>
+                    <div class="breakdown-list-item total"><span>Total Returns (Profit)</span><span class="value">AED ${f(r.totalProfit)}</span></div>
+                </div>
+            </div>`;
+    }
+
+    function displaySchedule(r, inputs) {
+        const container = document.getElementById('schedule');
+        const f = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+        const p = (n) => (n / inputs.propertyPrice * 100).toFixed(2);
+        let timelineHTML = '';
+        
+        // Add summary cards
+        timelineHTML += `
+            <div class="results-top-grid" style="margin-bottom: 2.5rem;">
+                <div class="metric-card"><div class="label">Total Paid by You</div><div class="value">AED ${f(r.timeline[r.timeline.length-1].cumulativeCashPaid)}</div></div>
+                <div class="metric-card"><div class="label">Amount Owed by You</div><div class="value">AED ${f(inputs.propertyPrice - r.timeline[r.timeline.length-1].cumulativeCashPaid)}</div></div>
+                <div class="metric-card"><div class="label">Post-Handover Monthly Payment</div><div class="value">AED ${f(r.annualPostHandoverPayment / 12)}</div></div>
+            </div>`;
+
+        timelineHTML += '<div class="payment-timeline">';
+        
+        // Add timeline items
+        timelineHTML += `<div class="timeline-item milestone"><div class="title">Purchase / Downpayment</div><div class="amount">AED ${f(r.downpaymentAmount)}</div><div class="note">${p(r.downpaymentAmount)}% of property price</div></div>`;
+
+        for (let i = 1; i <= inputs.yearsUntilHandover; i++) {
+            if (r.annualConstructionPayment > 0) {
+                 timelineHTML += `<div class="timeline-item"><div class="title">Construction Year ${i}</div><div class="amount">AED ${f(r.annualConstructionPayment)}</div><div class="note">${p(r.annualConstructionPayment)}% of property price</div></div>`;
+            }
+        }
+
+        timelineHTML += `<div class="timeline-item milestone"><div class="title">Handover</div><div class="note">Year ${inputs.yearsUntilHandover}</div></div>`;
+        
+        for (let i = 1; i <= inputs.postHandoverPaymentYears; i++) {
+             if (r.annualPostHandoverPayment > 0) {
+                 timelineHTML += `<div class="timeline-item"><div class="title">Post-handover Year ${i}</div><div class="amount">AED ${f(r.annualPostHandoverPayment)}</div><div class="note">${p(r.annualPostHandoverPayment)}% of property price</div></div>`;
+             }
+        }
+        
+        timelineHTML += '</div>';
+        container.innerHTML = timelineHTML;
+    }
+
+</script>
+</body>
+</html>
