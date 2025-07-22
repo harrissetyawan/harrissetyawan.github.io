@@ -93,13 +93,13 @@
         <h2>Property & Rental Details</h2>
         <div class="section-grid">
             <div class="input-group"><label>Property Price (AED)</label>
-                <input type="number" id="propertyPrice" value="10330000">
+                <input type="number" data-type="currency" id="propertyPrice" value="10330000">
             </div>
             <div class="input-group"><label>Property Size (sqft)</label>
-                <input type="number" id="propertySize" value="1000">
+                <input type="number" data-type="currency" id="propertySize" value="1000">
             </div>
             <div class="input-group"><label>Gross Annual Rent (AED)</label>
-                <input type="number" id="annualRent" value="180000">
+                <input type="number" data-type="currency" id="annualRent" value="180000">
             </div>
         </div>
 
@@ -123,16 +123,16 @@
                 </div>
                 <div id="manualServiceCharge" style="display: none;">
                     <label for="manualServiceChargeInput">Service Charge (AED per sqft)</label>
-                    <input type="number" id="manualServiceChargeInput" value="16">
+                    <input type="number" data-type="currency" id="manualServiceChargeInput" value="16">
                 </div>
             </div>
-            <div class="input-group"><label>Annual Management Fee (AED)</label><input type="number" id="managementFee" value="10000"></div>
+            <div class="input-group"><label>Annual Management Fee (AED)</label><input type="number" data-type="currency" id="managementFee" value="10000"></div>
         </div>
         
         <h2>Projections</h2>
         <div class="section-grid">
-             <div class="input-group"><label>Annual Rent Increase (%)</label><input type="number" id="rentIncrease" value="4"></div>
-             <div class="input-group"><label>Projection Period (Years)</label><input type="number" id="projectionYears" value="10"></div>
+             <div class="input-group"><label>Annual Rent Increase (%)</label><input type="number" data-type="currency" id="rentIncrease" value="4"></div>
+             <div class="input-group"><label>Projection Period (Years)</label><input type="number" data-type="currency" id="projectionYears" value="10"></div>
         </div>
         <button class="calculate-btn" id="calculateBtn">Calculate Yield</button>
     </div>
