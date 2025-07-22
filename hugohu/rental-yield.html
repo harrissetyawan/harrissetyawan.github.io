@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rental Yield Calculator</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --background-color: #f8f9fa;
+            --container-bg: #ffffff;
+            --input-bg: #f8f9fa;
+            --border-color: #dee2e6;
+            --text-primary: #212529;
+            --text-secondary: #6c757d;
+            --accent-blue: #0d6efd;
+            --accent-green: #198754;
+            --button-bg: #c7a468;
+            --button-hover-bg: #b3935f;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            justify-content: center;
+        }
+
+        .calculator-wrapper { max-width: 900px; width: 100%; }
+        .calculator-header { text-align: center; margin-bottom: 2rem; }
+        .calculator-header h1 { font-size: 1.8rem; color: var(--text-primary); }
+        .calculator-header p { font-size: 1rem; color: var(--text-secondary); }
+
+        .input-container, .output-container {
+            background-color: var(--container-bg);
+            padding: 2.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        
+        .output-container { margin-top: 2rem; }
+
+        h2 { font-weight: 600; font-size: 1.25rem; margin-top: 2rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; }
+        h2:first-of-type { margin-top: 0; }
+        
+        .section-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem 2rem; }
+        .input-group { display: flex; flex-direction: column; }
+        .input-group label { color: var(--text-secondary); margin-bottom: 0.5rem; font-size: 0.9rem; }
+        .input-group input[type="number"], .input-group select {
+            background-color: var(--input-bg); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 12px; font-size: 1rem; width: 100%; box-sizing: border-box;
+        }
+        
+        .service-charge-toggle { display: flex; gap: 1rem; margin-bottom: 0.5rem; }
+        .service-charge-toggle label { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+
+        .calculate-btn { width: 100%; background-color: var(--button-bg); color: white; padding: 1rem; font-size: 1.2rem; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; transition: background-color 0.2s; margin-top: 2.5rem; }
+        .calculate-btn:hover { background-color: var(--button-hover-bg); }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .summary-item {
+            background-color: var(--input-bg); padding: 1.5rem; border-radius: 6px; border: 1px solid var(--border-color); text-align: center;
+        }
+        .summary-item .label { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.5rem; }
+        .summary-item .value { font-size: 1.8rem; font-weight: 600; color: var(--accent-green); }
+
+        .results-table {
+            width: 100%; border-collapse: collapse; margin-top: 2rem;
+        }
+        .results-table th, .results-table td {
+            padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--border-color);
+        }
+        .results-table th { color: var(--text-secondary); }
+        .results-table td { font-family: monospace; }
+    </style>
+</head>
+<body>
+<div class="calculator-wrapper">
+    <div class="calculator-header">
+        <h1>Rental Yield Calculator</h1>
+        <p>Calculate the annual return on a ready property investment.</p>
+    </div>
+
+    <div class="input-container">
+        <h2>Property & Rental Details</h2>
+        <div class="section-grid">
+            <div class="input-group"><label>Property Price (AED)</label><input type="number" id="propertyPrice" value="10330000"></div>
+            <div class="input-group"><label>Property Size (sqft)</label><input type="number" id="propertySize" value="1000"></div>
+            <div class="input-group"><label>Gross Annual Rent (AED)</label><input type="number" id="annualRent" value="180000"></div>
+        </div>
+
+        <h2>Annual Costs</h2>
+        <div class="section-grid">
+            <div class="input-group">
+                <label>Service Charge Calculation</label>
+                <div class="service-charge-toggle">
+                    <label><input type="radio" name="serviceChargeMethod" value="auto" checked> Auto</label>
+                    <label><input type="radio" name="serviceChargeMethod" value="manual"> Manual</label>
+                </div>
+                <div id="autoServiceCharge">
+                    <label for="propertyType">Property Type</label>
+                    <select id="propertyType">
+                        <option value="apartment">Apartment</option>
+                        <option value="penthouse">Penthouse</option>
+                        <option value="villa">Villa</option>
+                        <option value="townhouse">Townhouse</option>
+                        <option value="luxury_apartment">Luxury Apartment</option>
+                    </select>
+                </div>
+                <div id="manualServiceCharge" style="display: none;">
+                    <label for="manualServiceChargeInput">Service Charge (AED per sqft)</label>
+                    <input type="number" id="manualServiceChargeInput" value="16">
+                </div>
+            </div>
+            <div class="input-group"><label>Annual Management Fee (AED)</label><input type="number" id="managementFee" value="10000"></div>
+        </div>
+        
+        <h2>Projections</h2>
+        <div class="section-grid">
+             <div class="input-group"><label>Annual Rent Increase (%)</label><input type="number" id="rentIncrease" value="4"></div>
+             <div class="input-group"><label>Projection Period (Years)</label><input type="number" id="projectionYears" value="10"></div>
+        </div>
+        <button class="calculate-btn" id="calculateBtn">Calculate Yield</button>
+    </div>
+
+    <div class="output-container" id="outputContainer" style="display:none;">
+        <h2>Projection Results</h2>
+        <div id="summaryResults"></div>
+        <canvas id="yieldChart"></canvas>
+        <div id="detailedResults"></div>
+    </div>
+</div>
+
+<script>
+    // --- CONFIGURATION DATA ---
+    const CONFIG = {
+        serviceChargePerSqft: {
+            apartment: 16,
+            penthouse: 20,
+            villa: 5,
+            townhouse: 5,
+            luxury_apartment: 30,
+        }
+    };
+    
+    let yieldChartInstance;
+
+    // --- SETUP UI ---
+    document.addEventListener('DOMContentLoaded', () => {
+        const serviceChargeRadios = document.querySelectorAll('input[name="serviceChargeMethod"]');
+        const autoDiv = document.getElementById('autoServiceCharge');
+        const manualDiv = document.getElementById('manualServiceCharge');
+
+        serviceChargeRadios.forEach(radio => {
+            radio.addEventListener('change', (event) => {
+                if (event.target.value === 'auto') {
+                    autoDiv.style.display = 'block';
+                    manualDiv.style.display = 'none';
+                } else {
+                    autoDiv.style.display = 'none';
+                    manualDiv.style.display = 'block';
+                }
+            });
+        });
+        
+        document.getElementById('calculateBtn').addEventListener('click', calculateAndDisplay);
+    });
+
+    // --- MAIN CALCULATION FUNCTION ---
+    function calculateAndDisplay() {
+        // Gather Inputs
+        const inputs = {
+            propertyPrice: parseFloat(document.getElementById('propertyPrice').value),
+            propertySize: parseFloat(document.getElementById('propertySize').value),
+            annualRent: parseFloat(document.getElementById('annualRent').value),
+            managementFee: parseFloat(document.getElementById('managementFee').value),
+            rentIncrease: parseFloat(document.getElementById('rentIncrease').value) / 100,
+            projectionYears: parseInt(document.getElementById('projectionYears').value),
+            serviceChargeMethod: document.querySelector('input[name="serviceChargeMethod"]:checked').value,
+            propertyType: document.getElementById('propertyType').value,
+            manualServiceChargeInput: parseFloat(document.getElementById('manualServiceChargeInput').value),
+        };
+
+        // Determine Service Charge
+        let serviceChargePerSqFt = 0;
+        if (inputs.serviceChargeMethod === 'auto') {
+            serviceChargePerSqFt = CONFIG.serviceChargePerSqft[inputs.propertyType];
+        } else {
+            serviceChargePerSqFt = inputs.manualServiceChargeInput;
+        }
+
+        // Run Simulation
+        const results = runYieldProjection(inputs, serviceChargePerSqFt);
+        
+        // Display Results
+        displaySummary(results);
+        displayTable(results);
+        renderChart(results);
+        
+        document.getElementById('outputContainer').style.display = 'block';
+        document.getElementById('outputContainer').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // --- SIMULATION ENGINE ---
+    function runYieldProjection(inputs, serviceChargePerSqFt) {
+        const projection = [];
+        let currentAnnualRent = inputs.annualRent;
+        const totalAnnualServiceCharge = inputs.propertySize * serviceChargePerSqFt;
+        
+        for (let i = 1; i <= inputs.projectionYears; i++) {
+            const totalAnnualCosts = totalAnnualServiceCharge + inputs.managementFee;
+            const netAnnualRent = currentAnnualRent - totalAnnualCosts;
+            const netRentalYield = (netAnnualRent / inputs.propertyPrice) * 100;
+
+            projection.push({
+                year: i,
+                grossRent: Math.round(currentAnnualRent),
+                netRent: Math.round(netAnnualRent),
+                yield: netRentalYield.toFixed(2),
+            });
+
+            currentAnnualRent *= (1 + inputs.rentIncrease);
+        }
+        return projection;
+    }
+
+    // --- DISPLAY FUNCTIONS ---
+    function displaySummary(results) {
+        const container = document.getElementById('summaryResults');
+        const year1Yield = results[0].yield;
+        const averageYield = results.reduce((acc, curr) => acc + parseFloat(curr.yield), 0) / results.length;
+        
+        container.innerHTML = `
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <div class="label">Year 1 Net Rent</div>
+                    <div class="value">AED ${results[0].netRent.toLocaleString()}</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Year 1 Net Yield</div>
+                    <div class="value">${year1Yield}%</div>
+                </div>
+                 <div class="summary-item">
+                    <div class="label">${results.length}-Year Average Yield</div>
+                    <div class="value">${averageYield.toFixed(2)}%</div>
+                </div>
+            </div>`;
+    }
+
+    function displayTable(results) {
+        const container = document.getElementById('detailedResults');
+        let tableHTML = `
+            <table class="results-table">
+                <tr><th>Year</th><th>Gross Rent (AED)</th><th>Net Rent (AED)</th><th>Net Rental Yield</th></tr>`;
+        results.forEach(res => {
+            tableHTML += `
+                <tr>
+                    <td>${res.year}</td>
+                    <td>${res.grossRent.toLocaleString()}</td>
+                    <td>${res.netRent.toLocaleString()}</td>
+                    <td>${res.yield}%</td>
+                </tr>`;
+        });
+        tableHTML += '</table>';
+        container.innerHTML = tableHTML;
+    }
+
+    function renderChart(results) {
+        const ctx = document.getElementById('yieldChart').getContext('2d');
+        const labels = results.map(r => `Year ${r.year}`);
+        const data = results.map(r => r.yield);
+
+        if (yieldChartInstance) {
+            yieldChartInstance.destroy();
+        }
+
+        yieldChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Net Rental Yield (%)',
+                    data: data,
+                    borderColor: 'var(--accent-green)',
+                    backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                    fill: true,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                scales: { y: { ticks: { callback: (value) => value + '%' } } }
+            }
+        });
+    }
+
+</script>
+</body>
+</html>
