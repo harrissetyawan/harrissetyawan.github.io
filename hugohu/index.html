@@ -6,7 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Advanced Off-Plan ROI Calculator</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/1.4.0/chartjs-plugin-annotation.min.js"></script>
     <style>
         :root {
             --background-color: #f8f9fa;
@@ -18,7 +19,6 @@
             --accent-blue: #0d6efd;
             --accent-green: #198754;
             --accent-gold: #ffc107;
-            /* --button-bg: #c7a468; */
             --button-bg: #212121;
             --button-hover-bg: #393939;
         }
@@ -43,12 +43,12 @@
             margin-bottom: 2rem;
         }
 
-        .calculator-header h1 {
+        h1 {
             font-size: 1.8rem;
             color: var(--text-primary);
         }
 
-        .calculator-header p {
+        p {
             font-size: 1rem;
             color: var(--text-secondary);
         }
@@ -96,7 +96,8 @@
             font-size: 0.9rem;
         }
 
-        .input-group input[type="number"] {
+        .input-group input[type="number"],
+        .input-group select {
             background-color: var(--input-bg);
             border: 1px solid var(--border-color);
             border-radius: 6px;
@@ -116,7 +117,6 @@
             outline: none;
             border-radius: 3px;
             margin-top: 1rem;
-            accent-color: black;
         }
 
         input[type="range"]::-webkit-slider-thumb {
@@ -127,7 +127,6 @@
             background: var(--accent-blue);
             cursor: pointer;
             border-radius: 50%;
-            accent-color: black;
         }
 
         .calculate-btn {
@@ -356,56 +355,63 @@
 <body>
     <div class="calculator-wrapper">
         <div class="calculator-header">
-            <!-- <p>Estimate your potential return on investment for Dubai properties</p> -->
+            <h1>NOWSHADI CALCULATOR</h1>
+            <p>Estimate your potential return on investment for Dubai properties</p>
         </div>
 
         <div class="input-container">
             <h2>Property Details</h2>
             <div class="section-grid">
                 <div class="input-group"><label>Property Price (AED)</label><input type="number" id="propertyPrice"
-                        value="0" data-type="currency"></div>
-                <div class="input-group"><label>Size in Sq. Ft.</label><input type="number" id="sizeSqFt" value="0"
-                        data-type="currency">
+                        value="10000000"></div>
+                <div class="input-group"><label>Size in Sq. Ft.</label><input type="number" id="sizeSqFt" value="800">
                 </div>
                 <div class="input-group"><label>Annual Rent Income (AED)</label><input type="number" id="annualRent"
-                        value="0" data-type="currency"></div>
+                        value="100000"></div>
                 <div class="input-group"><label>Service Cost per Sq. Ft. per Year</label><input type="number"
-                        id="serviceCostPerSqFt" value="0" data-type="currency"></div>
+                        id="serviceCostPerSqFt" value="15"></div>
                 <div class="input-group"><label>Extra Costs (Annual)</label><input type="number" id="extraCosts"
-                        value="0" data-type="currency"></div>
+                        value="50000"></div>
             </div>
 
             <h2>Payment Structure</h2>
             <div class="section-grid">
-                <div class="input-group">
-                    <label>Downpayment (%)</label>
-                    <input type="number" id="downpaymentPercent" value="0" min="0" max="100">
-                    <input type="range" id="downpaymentPercentSlider" value="0" min="0" max="100">
-                </div>
+                <div class="input-group"><label>Downpayment (%)</label><input type="number" id="downpaymentPercent"
+                        value="38" min="0" max="100"><input type="range" id="downpaymentPercentSlider" value="38"
+                        min="0" max="100"></div>
                 <div class="input-group"><label>Percentage Paid by Handover (%)</label><input type="number"
-                        id="percentPaidByHandover" value="0" min="0" max="100"><input type="range"
-                        id="percentPaidByHandoverSlider" value="0" min="0" max="100"></div>
+                        id="percentPaidByHandover" value="51" min="0" max="100"><input type="range"
+                        id="percentPaidByHandoverSlider" value="51" min="0" max="100"></div>
+
                 <div class="input-group">
-                    <label>Years Until Handover</label>
-                    <input type="number" id="yearsUntilHandover" value="0" min="0">
-                    <input type="range" id="yearsUntilHandoverSlider" value="0" min="0" max="20">
+                    <label>Handover Year</label>
+                    <input type="number" id="handoverYear" value="4" min="1">
+                </div>
+                <div class="input-group">
+                    <label>Handover Quarter</label>
+                    <select id="handoverQuarter">
+                        <option value="0.25">Q1</option>
+                        <option value="0.50">Q2</option>
+                        <option value="0.75">Q3</option>
+                        <option value="1.00">Q4</option>
+                    </select>
                 </div>
                 <div class="input-group"><label>Post-Handover Payment Years</label><input type="number"
-                        id="postHandoverPaymentYears" value="0" min="0"><input type="range"
-                        id="postHandoverPaymentYearsSlider" value="0" min="0" max="10"></div>
+                        id="postHandoverPaymentYears" value="5" min="0"><input type="range"
+                        id="postHandoverPaymentYearsSlider" value="5" min="0" max="10"></div>
             </div>
 
             <h2>Investment Performance</h2>
             <div class="section-grid">
                 <div class="input-group"><label>Average Area Appreciation Rate (%)</label><input type="number"
-                        id="appreciationRate" value="0.0" min="0" step="0.1"><input type="range"
-                        id="appreciationRateSlider" value="0.0" min="0" max="20" step="0.1"></div>
+                        id="appreciationRate" value="2.2" min="0" step="0.1"><input type="range"
+                        id="appreciationRateSlider" value="2.2" min="0" max="20" step="0.1"></div>
                 <div class="input-group"><label>How Many Years Will You Hold the Property?</label><input type="number"
-                        id="holdingPeriod" value="0"></div>
+                        id="holdingPeriod" value="7"></div>
                 <div class="input-group"><label>Dubai Land Department (DLD) Fees (%)</label><input type="number"
-                        id="dldPercent" value="0"></div>
+                        id="dldPercent" value="4"></div>
                 <div class="input-group"><label>Exit Costs (%)</label><input type="number" id="exitCostsPercent"
-                        value="0"></div>
+                        value="2"></div>
             </div>
             <button class="calculate-btn" id="calculateBtn">Calculate ROI</button>
         </div>
@@ -420,12 +426,14 @@
         </div>
     </div>
 
-    <!-- <script src="https://harrissetyawan.github.io/hugohu/separatorHelper.js"></script> -->
-    <script src="./separatorHelper.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/1.4.0/chartjs-plugin-annotation.min.js"></script>
     <script>
         let capitalAppreciationChartInstance;
+
         document.addEventListener('DOMContentLoaded', () => {
-            // --- UI SETUP ---
+            // UI Setup and event listeners... (omitted for brevity, same as before)
             const setupUI = () => {
                 const tabs = document.querySelectorAll('.tab-btn');
                 const tabContents = document.querySelectorAll('.tab-content');
@@ -441,10 +449,9 @@
 
                 const syncPairs = [
                     ['downpaymentPercent', 'downpaymentPercentSlider'], ['percentPaidByHandover', 'percentPaidByHandoverSlider'],
-                    ['yearsUntilHandover', 'yearsUntilHandoverSlider'], ['postHandoverPaymentYears', 'postHandoverPaymentYearsSlider'],
+                    ['postHandoverPaymentYears', 'postHandoverPaymentYearsSlider'],
                     ['appreciationRate', 'appreciationRateSlider']
                 ];
-
                 syncPairs.forEach(([numberId, sliderId]) => {
                     const numberInput = document.getElementById(numberId);
                     const sliderInput = document.getElementById(sliderId);
@@ -458,7 +465,6 @@
             document.getElementById('calculateBtn').addEventListener('click', calculateAndDisplay);
         });
 
-        // --- MAIN FUNCTION ---
         function calculateAndDisplay() {
             const inputs = gatherInputs();
             if (!validateInputs(inputs)) return;
@@ -472,19 +478,31 @@
         }
 
         function gatherInputs() {
-            const ids = ['propertyPrice', 'sizeSqFt', 'annualRent', 'serviceCostPerSqFt', 'extraCosts', 'downpaymentPercent', 'percentPaidByHandover', 'yearsUntilHandover', 'postHandoverPaymentYears', 'appreciationRate', 'holdingPeriod', 'dldPercent', 'exitCostsPercent'];
-            const inputs = {};
-            ids.forEach(id => inputs[id] = parseFloat(document.getElementById(id).value));
-            return inputs;
+            return {
+                propertyPrice: parseFloat(document.getElementById('propertyPrice').value),
+                sizeSqFt: parseFloat(document.getElementById('sizeSqFt').value),
+                annualRent: parseFloat(document.getElementById('annualRent').value),
+                serviceCostPerSqFt: parseFloat(document.getElementById('serviceCostPerSqFt').value),
+                extraCosts: parseFloat(document.getElementById('extraCosts').value),
+                downpaymentPercent: parseFloat(document.getElementById('downpaymentPercent').value),
+                percentPaidByHandover: parseFloat(document.getElementById('percentPaidByHandover').value),
+                handoverYear: parseInt(document.getElementById('handoverYear').value),
+                handoverQuarter: parseFloat(document.getElementById('handoverQuarter').value),
+                postHandoverPaymentYears: parseInt(document.getElementById('postHandoverPaymentYears').value),
+                appreciationRate: parseFloat(document.getElementById('appreciationRate').value),
+                holdingPeriod: parseInt(document.getElementById('holdingPeriod').value),
+                dldPercent: parseFloat(document.getElementById('dldPercent').value),
+                exitCostsPercent: parseFloat(document.getElementById('exitCostsPercent').value)
+            };
         }
 
         function validateInputs(inputs) {
-            if (Object.values(inputs).some(isNaN)) {
+            if (Object.values(inputs).some(val => isNaN(val))) {
                 alert("Please ensure all fields are filled with valid numbers.");
                 return false;
             }
-            if (inputs.holdingPeriod < inputs.yearsUntilHandover) {
-                alert("Holding period must be greater than or equal to the years until handover.");
+            if (inputs.holdingPeriod < inputs.handoverYear) {
+                alert("Holding period must be greater than or equal to the handover year.");
                 return false;
             }
             if (inputs.percentPaidByHandover < inputs.downpaymentPercent) {
@@ -494,14 +512,13 @@
             return true;
         }
 
-        // --- CORE SIMULATION ENGINE ---
         function runSimulation(inputs) {
-            // Calculations
+            const constructionDuration = inputs.handoverYear; // Assuming simulation starts at year 1
             const dldFeeAmount = inputs.propertyPrice * (inputs.dldPercent / 100);
             const downpaymentAmount = inputs.propertyPrice * (inputs.downpaymentPercent / 100);
             const totalPaidByHandover = inputs.propertyPrice * (inputs.percentPaidByHandover / 100);
             const constructionPaymentsTotal = totalPaidByHandover - downpaymentAmount;
-            const annualConstructionPayment = inputs.yearsUntilHandover > 0 ? constructionPaymentsTotal / inputs.yearsUntilHandover : 0;
+            const annualConstructionPayment = constructionDuration > 0 ? constructionPaymentsTotal / constructionDuration : 0;
             const remainingBalance = inputs.propertyPrice - totalPaidByHandover;
             const annualPostHandoverPayment = inputs.postHandoverPaymentYears > 0 ? remainingBalance / inputs.postHandoverPaymentYears : 0;
 
@@ -514,14 +531,20 @@
                 const propertyValue = previousValue * (1 + (inputs.appreciationRate / 100));
                 let paymentThisYear = 0;
                 if (year === 1) paymentThisYear += downpaymentAmount;
-                if (year > 0 && year <= inputs.yearsUntilHandover) paymentThisYear += annualConstructionPayment;
-                if (year > inputs.yearsUntilHandover && year <= inputs.yearsUntilHandover + inputs.postHandoverPaymentYears) paymentThisYear += annualPostHandoverPayment;
+                if (year > 0 && year <= constructionDuration) paymentThisYear += annualConstructionPayment;
+                if (year > constructionDuration && year <= constructionDuration + inputs.postHandoverPaymentYears) paymentThisYear += annualPostHandoverPayment;
 
+                // --- PRO-RATA RENT CALCULATION (HUGO'S NEW RULE) ---
                 let netRentThisYear = 0;
-                if (year > inputs.yearsUntilHandover) {
-                    const annualServiceCharge = inputs.sizeSqFt * inputs.serviceCostPerSqFt;
-                    netRentThisYear = inputs.annualRent - annualServiceCharge - inputs.extraCosts;
+                const fullYearNetRent = inputs.annualRent - (inputs.sizeSqFt * inputs.serviceCostPerSqFt) - inputs.extraCosts;
+
+                if (year > inputs.handoverYear) {
+                    netRentThisYear = fullYearNetRent;
+                } else if (year === inputs.handoverYear) {
+                    const rentalMultiplier = 1 - inputs.handoverQuarter; // e.g., Q2 handover (value=0.5) -> 1 - 0.5 = 0.5 (50% of rent)
+                    netRentThisYear = fullYearNetRent * rentalMultiplier;
                 }
+                // --- END OF NEW LOGIC ---
 
                 cumulativeCashPaid += paymentThisYear;
                 cumulativeNetRent += netRentThisYear;
@@ -529,24 +552,21 @@
                 previousValue = propertyValue;
             }
 
-            const finalPropertyValue = timeline[timeline.length - 1].propertyValue;
+            const finalPropertyValue = timeline.length > 0 ? timeline[timeline.length - 1].propertyValue : inputs.propertyPrice;
             const totalAppreciation = finalPropertyValue - inputs.propertyPrice;
             const exitCostAmount = finalPropertyValue * (inputs.exitCostsPercent / 100);
 
-            let balanceOwedAtExit = 0;
-            const postHandoverYearsPassed = inputs.holdingPeriod > inputs.yearsUntilHandover ? inputs.holdingPeriod - inputs.yearsUntilHandover : 0;
-            if (postHandoverYearsPassed < inputs.postHandoverPaymentYears) {
-                balanceOwedAtExit = (inputs.postHandoverPaymentYears - postHandoverYearsPassed) * annualPostHandoverPayment;
-            }
+            const totalRentalYears = inputs.holdingPeriod - inputs.handoverYear + (1 - inputs.handoverQuarter);
+            const totalExtraCosts = inputs.extraCosts * (totalRentalYears > 0 ? totalRentalYears : 0);
 
-            const totalCashInvested = cumulativeCashPaid + dldFeeAmount + (inputs.extraCosts * postHandoverYearsPassed);
-            const totalProfit = totalAppreciation + cumulativeNetRent - dldFeeAmount - (inputs.extraCosts * postHandoverYearsPassed) - exitCostAmount;
-            const totalROI = (totalProfit / totalCashInvested) * 100;
-            const annualizedROI = totalROI / inputs.holdingPeriod;
+            const totalCashInvested = cumulativeCashPaid + dldFeeAmount + totalExtraCosts;
+            const totalProfit = totalAppreciation + cumulativeNetRent - dldFeeAmount - totalExtraCosts - exitCostAmount;
+            const totalROI = totalCashInvested > 0 ? (totalProfit / totalCashInvested) * 100 : 0;
+            const annualizedROI = inputs.holdingPeriod > 0 ? totalROI / inputs.holdingPeriod : 0;
 
-            const totalPurchaseCost = inputs.propertyPrice + dldFeeAmount + (inputs.extraCosts * postHandoverYearsPassed);
-            const appreciationROIContribution = (totalAppreciation / totalPurchaseCost) * 100;
-            const rentalROIContribution = (cumulativeNetRent / totalPurchaseCost) * 100;
+            const totalPurchaseCost = inputs.propertyPrice + dldFeeAmount + totalExtraCosts;
+            const appreciationROIContribution = totalPurchaseCost > 0 ? (totalAppreciation / totalPurchaseCost) * 100 : 0;
+            const rentalROIContribution = totalPurchaseCost > 0 ? (cumulativeNetRent / totalPurchaseCost) * 100 : 0;
 
             return {
                 timeline, dldFeeAmount, exitCostAmount, totalAppreciation, cumulativeNetRent, totalCashInvested, totalProfit, totalROI, annualizedROI, totalPurchaseCost,
@@ -554,86 +574,70 @@
             };
         }
 
-        // --- DISPLAY FUNCTIONS ---
         function displayResults(r, inputs) {
             const container = document.getElementById('results');
-            const f = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 0 }); // Formatter
+            const f = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
             const f2 = (n) => n.toFixed(2);
-            const rentalYears = inputs.holdingPeriod > inputs.yearsUntilHandover ? inputs.holdingPeriod - inputs.yearsUntilHandover : 0;
+            const rentalYears = (inputs.holdingPeriod - inputs.handoverYear + (1 - inputs.handoverQuarter)).toFixed(1);
 
             container.innerHTML = `
             <div class="results-top-grid">
-                <div class="metric-card">
-                    <div class="label">Total Purchase Cost</div><div class="value">AED ${f(r.totalPurchaseCost)}</div><div class="note">Including DLD fees and extra costs</div>
-                </div>
-                <div class="metric-card">
-                    <div class="label">Annual Rental Income</div><div class="value">AED ${f(inputs.annualRent - (inputs.sizeSqFt * inputs.serviceCostPerSqFt))}</div><div class="note">After service charges</div>
-                </div>
-                <div class="metric-card">
-                    <div class="label">Appreciation Value</div><div class="value">AED ${f(r.totalAppreciation)}</div><div class="note">Over ${inputs.holdingPeriod} years</div>
-                </div>
+                 <div class="metric-card"><div class="label">Total Purchase Cost</div><div class="value">AED ${f(r.totalPurchaseCost)}</div><div class="note">Including DLD fees and total extra costs</div></div>
+                 <div class="metric-card"><div class="label">Net Annual Rental Income</div><div class="value">AED ${f(inputs.annualRent - (inputs.sizeSqFt * inputs.serviceCostPerSqFt) - inputs.extraCosts)}</div><div class="note">Est. for a full year</div></div>
+                 <div class="metric-card"><div class="label">Appreciation Value</div><div class="value">AED ${f(r.totalAppreciation)}</div><div class="note">Over ${inputs.holdingPeriod} years</div></div>
             </div>
             <div class="profit-section">
-                <div class="total-profit"><div class="label">Total Profit</div><div class="value">AED ${f(r.totalProfit)}</div><div class="note">After all costs and fees</div></div>
-                <div class="roi-breakdown">
-                    <div class="label">Return on Investment: ${f2(r.totalROI)}%</div>
-                    <div class="item">${f2(r.appreciationROIContribution)}% from appreciation</div>
-                    <div class="item">${f2(r.rentalROIContribution)}% from rental income</div>
-                </div>
+                 <div class="total-profit"><div class="label">Total Profit</div><div class="value">AED ${f(r.totalProfit)}</div><div class="note">After all costs and fees</div></div>
+                 <div class="roi-breakdown"><div class="label">Return on Investment: ${f2(r.totalROI)}%</div><div class="item">${f2(r.appreciationROIContribution)}% from appreciation</div><div class="item">${f2(r.rentalROIContribution)}% from rental income</div></div>
             </div>
             <div class="results-bottom-grid">
                 <div class="breakdown-box">
                     <h3>Initial Investment</h3>
                     <div class="breakdown-list-item"><span>Property Price</span><span class="value">AED ${f(inputs.propertyPrice)}</span></div>
                     <div class="breakdown-list-item"><span>DLD Fees (${inputs.dldPercent}%)</span><span class="value">AED ${f(r.dldFeeAmount)}</span></div>
-                    <div class="breakdown-list-item"><span>Extra Costs</span><span class="value">AED ${f(inputs.extraCosts * rentalYears)}</span></div>
-                    <div class="breakdown-list-item total"><span>Total Investment</span><span class="value">AED ${f(r.totalPurchaseCost)}</span></div>
+                    <div class="breakdown-list-item"><span>Total Extra Costs</span><span class="value">AED ${f(inputs.extraCosts * (rentalYears > 0 ? rentalYears : 0))}</span></div>
+                    <div class="breakdown-list-item total"><span>Total Investment Cost</span><span class="value">AED ${f(r.totalPurchaseCost)}</span></div>
                 </div>
                 <div class="breakdown-box returns-list">
                     <h3>Returns</h3>
                     <div class="breakdown-list-item"><span>Property Appreciation</span><span class="value">AED ${f(r.totalAppreciation)}</span></div>
-                    <div class="breakdown-list-item"><span>Rental Income (${rentalYears} years)</span><span class="value">AED ${f(r.cumulativeNetRent)}</span></div>
+                    <div class="breakdown-list-item"><span>Total Rental Income (${rentalYears} yrs)</span><span class="value">AED ${f(r.cumulativeNetRent)}</span></div>
                     <div class="breakdown-list-item"><span>Exit Costs (${inputs.exitCostsPercent}%)</span><span class="value negative">-AED ${f(r.exitCostAmount)}</span></div>
                     <div class="breakdown-list-item total"><span>Total Returns (Profit)</span><span class="value">AED ${f(r.totalProfit)}</span></div>
                 </div>
             </div>
-            
             <div class="breakdown-box" style="grid-column: 1 / -1; margin-top: 2rem;">
                 <h3>Capital Appreciation Over Time</h3>
                 <canvas id="capitalAppreciationChart"></canvas>
-            </div>
-            `;
+            </div>`;
 
-            // Call the new function to render the chart
-            renderCapitalAppreciationChart(r.timeline, inputs.propertyPrice);
+            const preciseHandoverPoint = inputs.handoverYear - 1 + inputs.handoverQuarter;
+            renderCapitalAppreciationChart(r.timeline, inputs.propertyPrice, preciseHandoverPoint);
         }
 
         function displaySchedule(r, inputs) {
             const container = document.getElementById('schedule');
             const f = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
-            const p = (n) => (n / inputs.propertyPrice * 100).toFixed(2);
+            const p = (n) => inputs.propertyPrice > 0 ? (n / inputs.propertyPrice * 100).toFixed(2) : 0;
             let timelineHTML = '';
 
-            // Add summary cards
+            const cumulativePaidAtEnd = r.timeline.length > 0 ? r.timeline[r.timeline.length - 1].cumulativeCashPaid : 0;
             timelineHTML += `
             <div class="results-top-grid" style="margin-bottom: 2.5rem;">
-                <div class="metric-card"><div class="label">Total Paid by You</div><div class="value">AED ${f(r.timeline[r.timeline.length - 1].cumulativeCashPaid)}</div></div>
-                <div class="metric-card"><div class="label">Amount Owed by You</div><div class="value">AED ${f(inputs.propertyPrice - r.timeline[r.timeline.length - 1].cumulativeCashPaid)}</div></div>
-                <div class="metric-card"><div class="label">Post-Handover Monthly Payment</div><div class="value">AED ${f(r.annualPostHandoverPayment / 12)}</div></div>
-            </div>`;
+                 <div class="metric-card"><div class="label">Total Paid by You</div><div class="value">AED ${f(cumulativePaidAtEnd)}</div></div>
+                 <div class="metric-card"><div class="label">Amount Owed by You</div><div class="value">AED ${f(inputs.propertyPrice - cumulativePaidAtEnd)}</div></div>
+                 <div class="metric-card"><div class="label">Post-Handover Monthly Payment</div><div class="value">AED ${f(r.annualPostHandoverPayment / 12)}</div></div>
+            </div>
+            <div class="payment-timeline">
+                 <div class="timeline-item milestone"><div class="title">Purchase / Downpayment</div><div class="amount">AED ${f(r.downpaymentAmount)}</div><div class="note">${p(r.downpaymentAmount)}% of property price</div></div>`;
 
-            timelineHTML += '<div class="payment-timeline">';
-
-            // Add timeline items
-            timelineHTML += `<div class="timeline-item milestone"><div class="title">Purchase / Downpayment</div><div class="amount">AED ${f(r.downpaymentAmount)}</div><div class="note">${p(r.downpaymentAmount)}% of property price</div></div>`;
-
-            for (let i = 1; i <= inputs.yearsUntilHandover; i++) {
-                if (r.annualConstructionPayment > 0) {
+            for (let i = 1; i <= inputs.handoverYear; i++) {
+                if (r.annualConstructionPayment > 0 && i > 0) { // Payment happens for each construction year
                     timelineHTML += `<div class="timeline-item"><div class="title">Construction Year ${i}</div><div class="amount">AED ${f(r.annualConstructionPayment)}</div><div class="note">${p(r.annualConstructionPayment)}% of property price</div></div>`;
                 }
             }
 
-            timelineHTML += `<div class="timeline-item milestone"><div class="title">Handover</div><div class="note">Year ${inputs.yearsUntilHandover}</div></div>`;
+            timelineHTML += `<div class="timeline-item milestone"><div class="title">Handover</div><div class="note">Year ${inputs.handoverYear}, Q${inputs.handoverQuarter * 4}</div></div>`;
 
             for (let i = 1; i <= inputs.postHandoverPaymentYears; i++) {
                 if (r.annualPostHandoverPayment > 0) {
@@ -645,10 +649,8 @@
             container.innerHTML = timelineHTML;
         }
 
-        function renderCapitalAppreciationChart(timeline, initialPrice) {
+        function renderCapitalAppreciationChart(timeline, initialPrice, preciseHandoverPoint) {
             const ctx = document.getElementById('capitalAppreciationChart').getContext('2d');
-
-            // Include the starting point (Year 0)
             const labels = ['Start', ...timeline.map(item => `Year ${item.year}`)];
             const data = [initialPrice, ...timeline.map(item => item.propertyValue)];
 
@@ -658,39 +660,21 @@
 
             capitalAppreciationChartInstance = new Chart(ctx, {
                 type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Property Value (AED)',
-                        data: data,
-                        borderColor: '#0d6efd',
-                        backgroundColor: 'rgba(13, 110, 253, 0.1)',
-                        fill: true,
-                        tension: 0.2
-                    }]
-                },
+                data: { labels, datasets: [{ label: 'Property Value (AED)', data, borderColor: '#0d6efd', backgroundColor: 'rgba(13, 110, 253, 0.1)', fill: true, tension: 0.2 }] },
                 options: {
-                    scales: {
-                        y: {
-                            ticks: {
-                                callback: function (value, index, values) {
-                                    return 'AED ' + value.toLocaleString();
-                                }
-                            }
-                        }
-                    },
+                    scales: { y: { ticks: { callback: (value) => 'AED ' + value.toLocaleString() } } },
                     plugins: {
-                        tooltip: {
-                            callbacks: {
-                                label: function (context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) {
-                                        label += ': ';
-                                    }
-                                    if (context.parsed.y !== null) {
-                                        label += 'AED ' + context.parsed.y.toLocaleString();
-                                    }
-                                    return label;
+                        tooltip: { callbacks: { label: (context) => 'AED ' + context.parsed.y.toLocaleString() } },
+                        annotation: {
+                            annotations: {
+                                handoverLine: {
+                                    type: 'line',
+                                    scaleID: 'x',
+                                    value: preciseHandoverPoint,
+                                    borderColor: '#dc3545',
+                                    borderWidth: 2,
+                                    borderDash: [6, 6],
+                                    label: { content: 'Handover', enabled: true, position: 'start', backgroundColor: '#dc3545' }
                                 }
                             }
                         }
