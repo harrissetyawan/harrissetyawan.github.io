@@ -355,33 +355,47 @@
 <body>
     <div class="calculator-wrapper">
         <div class="calculator-header">
-            <h1>NOWSHADI CALCULATOR</h1>
+            <!-- <h1>NOWSHADI CALCULATOR</h1> -->
             <p>Estimate your potential return on investment for Dubai properties</p>
         </div>
 
         <div class="input-container">
             <h2>Property Details</h2>
             <div class="section-grid">
-                <div class="input-group"><label>Property Price (AED)</label><input type="number" id="propertyPrice"
-                        value="10000000"></div>
-                <div class="input-group"><label>Size in Sq. Ft.</label><input type="number" id="sizeSqFt" value="800">
+                <div class="input-group">
+                    <label>Property Price (AED)</label>
+                    <input data-type="currency" type="number" id="propertyPrice" value="10000000">
                 </div>
-                <div class="input-group"><label>Annual Rent Income (AED)</label><input type="number" id="annualRent"
-                        value="100000"></div>
-                <div class="input-group"><label>Service Cost per Sq. Ft. per Year</label><input type="number"
-                        id="serviceCostPerSqFt" value="15"></div>
-                <div class="input-group"><label>Extra Costs (Annual)</label><input type="number" id="extraCosts"
-                        value="50000"></div>
+                <div class="input-group">
+                    <label>Size in Sq. Ft.</label>
+                    <input data-type="currency" type="number" id="sizeSqFt" value="800">
+                </div>
+                <div class="input-group">
+                    <label>Annual Rent Income (AED)</label>
+                    <input data-type="currency" type="number" id="annualRent" value="100000">
+                </div>
+                <div class="input-group">
+                    <label>Service Cost per Sq. Ft. per Year</label>
+                    <input data-type="currency" type="number" id="serviceCostPerSqFt" value="15">
+                </div>
+                <div class="input-group">
+                    <label>Extra Costs (Annual)</label>
+                    <input data-type="currency" type="number" id="extraCosts" value="50000">
+                </div>
             </div>
 
             <h2>Payment Structure</h2>
             <div class="section-grid">
-                <div class="input-group"><label>Downpayment (%)</label><input type="number" id="downpaymentPercent"
-                        value="38" min="0" max="100"><input type="range" id="downpaymentPercentSlider" value="38"
-                        min="0" max="100"></div>
-                <div class="input-group"><label>Percentage Paid by Handover (%)</label><input type="number"
-                        id="percentPaidByHandover" value="51" min="0" max="100"><input type="range"
-                        id="percentPaidByHandoverSlider" value="51" min="0" max="100"></div>
+                <div class="input-group">
+                    <label>Downpayment (%)</label>
+                    <input type="number" id="downpaymentPercent" value="38" min="0" max="100">
+                    <input type="range" id="downpaymentPercentSlider" value="38" min="0" max="100">
+                </div>
+                <div class="input-group">
+                    <label>Percentage Paid by Handover (%)</label>
+                    <input type="number" id="percentPaidByHandover" value="51" min="0" max="100">
+                    <input type="range" id="percentPaidByHandoverSlider" value="51" min="0" max="100">
+                </div>
 
                 <div class="input-group">
                     <label>Handover Year</label>
@@ -396,22 +410,32 @@
                         <option value="1.00">Q4</option>
                     </select>
                 </div>
-                <div class="input-group"><label>Post-Handover Payment Years</label><input type="number"
-                        id="postHandoverPaymentYears" value="5" min="0"><input type="range"
-                        id="postHandoverPaymentYearsSlider" value="5" min="0" max="10"></div>
+                <div class="input-group">
+                    <label>Post-Handover Payment Years</label>
+                    <input type="number" id="postHandoverPaymentYears" value="5" min="0">
+                    <input type="range" id="postHandoverPaymentYearsSlider" value="5" min="0" max="10">
+                </div>
             </div>
 
             <h2>Investment Performance</h2>
             <div class="section-grid">
-                <div class="input-group"><label>Average Area Appreciation Rate (%)</label><input type="number"
-                        id="appreciationRate" value="2.2" min="0" step="0.1"><input type="range"
-                        id="appreciationRateSlider" value="2.2" min="0" max="20" step="0.1"></div>
-                <div class="input-group"><label>How Many Years Will You Hold the Property?</label><input type="number"
-                        id="holdingPeriod" value="7"></div>
-                <div class="input-group"><label>Dubai Land Department (DLD) Fees (%)</label><input type="number"
-                        id="dldPercent" value="4"></div>
-                <div class="input-group"><label>Exit Costs (%)</label><input type="number" id="exitCostsPercent"
-                        value="2"></div>
+                <div class="input-group">
+                    <label>Average Area Appreciation Rate (%)</label>
+                    <input type="number" id="appreciationRate" value="2.2" min="0" step="0.1">
+                    <input type="range" id="appreciationRateSlider" value="2.2" min="0" max="20" step="0.1">
+                </div>
+                <div class="input-group">
+                    <label>How Many Years Will You Hold the Property?</label>
+                    <input type="number" id="holdingPeriod" value="7">
+                </div>
+                <div class="input-group">
+                    <label>Dubai Land Department (DLD) Fees (%)</label>
+                    <input type="number" id="dldPercent" value="4">
+                </div>
+                <div class="input-group">
+                    <label>Exit Costs (%)</label>
+                    <input type="number" id="exitCostsPercent" value="2">
+                </div>
             </div>
             <button class="calculate-btn" id="calculateBtn">Calculate ROI</button>
         </div>
@@ -426,12 +450,9 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script
-        src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/1.4.0/chartjs-plugin-annotation.min.js"></script>
+    <script src="https://harrissetyawan.github.io/hugohu/separatorHelper.js"></script>
     <script>
         let capitalAppreciationChartInstance;
-
         document.addEventListener('DOMContentLoaded', () => {
             // UI Setup and event listeners... (omitted for brevity, same as before)
             const setupUI = () => {
