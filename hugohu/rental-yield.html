@@ -113,7 +113,7 @@
                 </div> -->
                 <div id="manualServiceCharge" style="display: block;">
                     <label for="manualServiceChargeInput">Service Charge (AED per sqft)</label>
-                    <input type="number" data-type="currency" id="manualServiceChargeInput">
+                    <input type="number" id="manualServiceChargeInput">
                 </div>
                 <div id="autoServiceCharge">
                     <label for="propertyType">Property Type</label>
@@ -155,8 +155,8 @@
         serviceChargePerSqft: {
             apartment: 16,
             penthouse: 20,
-            villa: 5,
-            townhouse: 5,
+            villa: 4,
+            townhouse: 4,
             luxury_apartment: 30,
         }
     };
@@ -168,6 +168,8 @@
         const serviceChargeRadios = document.querySelectorAll('input[name="serviceChargeMethod"]');
         const autoDiv = document.getElementById('autoServiceCharge');
         const manualDiv = document.getElementById('manualServiceCharge');
+        const serviceCharge = document.getElementById('manualServiceChargeInput');
+        const propertyType = document.getElementById('propertyType');
 
         serviceChargeRadios.forEach(radio => {
             radio.addEventListener('change', (event) => {
@@ -180,7 +182,9 @@
                 }
             });
         });
-        
+        propertyType.addEventListener('change', function() {
+            serviceCharge.value = CONFIG.serviceChargePerSqft[this.value];
+        })
         document.getElementById('calculateBtn').addEventListener('click', calculateAndDisplay);
     });
 
@@ -200,12 +204,7 @@
         };
 
         // Determine Service Charge
-        let serviceChargePerSqFt = 0;
-        if (inputs.serviceChargeMethod === 'auto') {
-            serviceChargePerSqFt = CONFIG.serviceChargePerSqft[inputs.propertyType];
-        } else {
-            serviceChargePerSqFt = inputs.manualServiceChargeInput;
-        }
+        let serviceChargePerSqFt = inputs.manualServiceChargeInput;
 
         // Run Simulation
         const results = runYieldProjection(inputs, serviceChargePerSqFt);
