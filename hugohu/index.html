@@ -399,7 +399,7 @@
 
                 <div class="input-group">
                     <label>Handover Year</label>
-                    <input type="number" id="handoverYear" value="4" min="1">
+                    <input type="number" id="handoverYear" value="2029" min="1">
                 </div>
                 <div class="input-group">
                     <label>Handover Quarter</label>
@@ -452,6 +452,7 @@
 
     <script src="https://harrissetyawan.github.io/hugohu/separatorHelper.js"></script>
     <script>
+        let DATE = new Date();
         let capitalAppreciationChartInstance;
         document.addEventListener('DOMContentLoaded', () => {
             // UI Setup and event listeners... (omitted for brevity, same as before)
@@ -522,10 +523,22 @@
                 alert("Please ensure all fields are filled with valid numbers.");
                 return false;
             }
-            if (inputs.holdingPeriod < inputs.handoverYear) {
-                alert("Holding period must be greater than or equal to the handover year.");
+
+            // --- CHANGED LOGIC ---
+            // Calculate the duration from the absolute year provided.
+            const purchaseYear = new Date().getFullYear();
+            const constructionDuration = inputs.handoverYear - purchaseYear;
+
+            if (constructionDuration < 0) {
+                alert("Handover year must be in the future.");
                 return false;
             }
+            if (inputs.holdingPeriod < constructionDuration) {
+                alert("Holding period must be long enough to reach the handover year.");
+                return false;
+            }
+            // --- END CHANGED LOGIC ---
+
             if (inputs.percentPaidByHandover < inputs.downpaymentPercent) {
                 alert("Percentage paid by handover cannot be less than the downpayment.");
                 return false;
@@ -534,11 +547,17 @@
         }
 
         function runSimulation(inputs) {
-            const constructionDuration = inputs.handoverYear; // Assuming simulation starts at year 1
+            // --- NEW: Calculate duration from the absolute handover year ---
+            const purchaseYear = new Date().getFullYear();
+            const constructionDuration = inputs.handoverYear - purchaseYear;
+            // ---
+
+            // Calculations now use the calculated duration
             const dldFeeAmount = inputs.propertyPrice * (inputs.dldPercent / 100);
             const downpaymentAmount = inputs.propertyPrice * (inputs.downpaymentPercent / 100);
             const totalPaidByHandover = inputs.propertyPrice * (inputs.percentPaidByHandover / 100);
             const constructionPaymentsTotal = totalPaidByHandover - downpaymentAmount;
+            // CHANGED: Use constructionDuration
             const annualConstructionPayment = constructionDuration > 0 ? constructionPaymentsTotal / constructionDuration : 0;
             const remainingBalance = inputs.propertyPrice - totalPaidByHandover;
             const annualPostHandoverPayment = inputs.postHandoverPaymentYears > 0 ? remainingBalance / inputs.postHandoverPaymentYears : 0;
@@ -552,24 +571,24 @@
                 const propertyValue = previousValue * (1 + (inputs.appreciationRate / 100));
                 let paymentThisYear = 0;
                 if (year === 1) paymentThisYear += downpaymentAmount;
-                if (year > 0 && year <= constructionDuration) paymentThisYear += annualConstructionPayment;
+                // CHANGED: Use constructionDuration
+                if (year > 1 && year <= constructionDuration) paymentThisYear += annualConstructionPayment;
                 if (year > constructionDuration && year <= constructionDuration + inputs.postHandoverPaymentYears) paymentThisYear += annualPostHandoverPayment;
 
-                // --- PRO-RATA RENT CALCULATION (HUGO'S NEW RULE) ---
                 let netRentThisYear = 0;
                 const fullYearNetRent = inputs.annualRent - (inputs.sizeSqFt * inputs.serviceCostPerSqFt) - inputs.extraCosts;
 
-                if (year > inputs.handoverYear) {
+                // CHANGED: This logic now compares the loop year to the calculated duration
+                if (year > constructionDuration) {
                     netRentThisYear = fullYearNetRent;
-                } else if (year === inputs.handoverYear) {
-                    const rentalMultiplier = 1 - inputs.handoverQuarter; // e.g., Q2 handover (value=0.5) -> 1 - 0.5 = 0.5 (50% of rent)
+                } else if (year === constructionDuration) {
+                    const rentalMultiplier = 1 - inputs.handoverQuarter;
                     netRentThisYear = fullYearNetRent * rentalMultiplier;
                 }
-                // --- END OF NEW LOGIC ---
 
                 cumulativeCashPaid += paymentThisYear;
                 cumulativeNetRent += netRentThisYear;
-                timeline.push({ year, propertyValue, paymentThisYear, netRentThisYear, cumulativeCashPaid });
+                timeline.push({ year, propertyValue, paymentThisYear, netRentThisYear, cumulativeCashPaid, yearLabel: purchaseYear + year });
                 previousValue = propertyValue;
             }
 
@@ -577,8 +596,12 @@
             const totalAppreciation = finalPropertyValue - inputs.propertyPrice;
             const exitCostAmount = finalPropertyValue * (inputs.exitCostsPercent / 100);
 
-            const totalRentalYears = inputs.holdingPeriod - inputs.handoverYear + (1 - inputs.handoverQuarter);
-            const totalExtraCosts = inputs.extraCosts * (totalRentalYears > 0 ? totalRentalYears : 0);
+            // This logic remains correct as it's based on the loop which respects the holding period
+            const totalRentalYears = inputs.holdingPeriod > constructionDuration ? inputs.holdingPeriod - constructionDuration : 0;
+            const proRataRentalYear = (inputs.holdingPeriod === constructionDuration) ? (1 - inputs.handoverQuarter) : 0;
+            const totalEffectiveRentalYears = totalRentalYears + proRataRentalYear;
+
+            const totalExtraCosts = inputs.extraCosts * (totalEffectiveRentalYears > 0 ? totalEffectiveRentalYears : 0);
 
             const totalCashInvested = cumulativeCashPaid + dldFeeAmount + totalExtraCosts;
             const totalProfit = totalAppreciation + cumulativeNetRent - dldFeeAmount - totalExtraCosts - exitCostAmount;
@@ -591,7 +614,7 @@
 
             return {
                 timeline, dldFeeAmount, exitCostAmount, totalAppreciation, cumulativeNetRent, totalCashInvested, totalProfit, totalROI, annualizedROI, totalPurchaseCost,
-                appreciationROIContribution, rentalROIContribution, downpaymentAmount, annualConstructionPayment, annualPostHandoverPayment
+                appreciationROIContribution, rentalROIContribution, downpaymentAmount, annualConstructionPayment, annualPostHandoverPayment, constructionDuration
             };
         }
 
@@ -633,36 +656,37 @@
             </div>`;
 
             const preciseHandoverPoint = inputs.handoverYear - 1 + inputs.handoverQuarter;
-            renderCapitalAppreciationChart(r.timeline, inputs.propertyPrice, preciseHandoverPoint);
+            renderCapitalAppreciationChart(r.timeline, inputs.propertyPrice, inputs.handoverYear, inputs.handoverQuarter);
         }
-
         function displaySchedule(r, inputs) {
             const container = document.getElementById('schedule');
             const f = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
             const p = (n) => inputs.propertyPrice > 0 ? (n / inputs.propertyPrice * 100).toFixed(2) : 0;
             let timelineHTML = '';
+            const purchaseYear = new Date().getFullYear();
 
             const cumulativePaidAtEnd = r.timeline.length > 0 ? r.timeline[r.timeline.length - 1].cumulativeCashPaid : 0;
             timelineHTML += `
-            <div class="results-top-grid" style="margin-bottom: 2.5rem;">
-                 <div class="metric-card"><div class="label">Total Paid by You</div><div class="value">AED ${f(cumulativePaidAtEnd)}</div></div>
-                 <div class="metric-card"><div class="label">Amount Owed by You</div><div class="value">AED ${f(inputs.propertyPrice - cumulativePaidAtEnd)}</div></div>
-                 <div class="metric-card"><div class="label">Post-Handover Monthly Payment</div><div class="value">AED ${f(r.annualPostHandoverPayment / 12)}</div></div>
-            </div>
-            <div class="payment-timeline">
-                 <div class="timeline-item milestone"><div class="title">Purchase / Downpayment</div><div class="amount">AED ${f(r.downpaymentAmount)}</div><div class="note">${p(r.downpaymentAmount)}% of property price</div></div>`;
+    <div class="results-top-grid" style="margin-bottom: 2.5rem;">
+         <div class="metric-card"><div class="label">Total Paid by You</div><div class="value">AED ${f(cumulativePaidAtEnd)}</div></div>
+         <div class="metric-card"><div class="label">Amount Owed by You</div><div class="value">AED ${f(inputs.propertyPrice - cumulativePaidAtEnd)}</div></div>
+         <div class="metric-card"><div class="label">Post-Handover Monthly Payment</div><div class="value">AED ${f(r.annualPostHandoverPayment / 12)}</div></div>
+    </div>
+    <div class="payment-timeline">
+         <div class="timeline-item milestone"><div class="title">Purchase / Downpayment (${purchaseYear})</div><div class="amount">AED ${f(r.downpaymentAmount)}</div><div class="note">${p(r.downpaymentAmount)}% of property price</div></div>`;
 
-            for (let i = 1; i <= inputs.handoverYear; i++) {
-                if (r.annualConstructionPayment > 0 && i > 0) { // Payment happens for each construction year
-                    timelineHTML += `<div class="timeline-item"><div class="title">Construction Year ${i}</div><div class="amount">AED ${f(r.annualConstructionPayment)}</div><div class="note">${p(r.annualConstructionPayment)}% of property price</div></div>`;
+            for (let i = 1; i < r.constructionDuration; i++) {
+                if (r.annualConstructionPayment > 0) {
+                    timelineHTML += `<div class="timeline-item"><div class="title">Construction Year ${i + 1} (${purchaseYear + i})</div><div class="amount">AED ${f(r.annualConstructionPayment)}</div><div class="note">${p(r.annualConstructionPayment)}% of property price</div></div>`;
                 }
             }
 
-            timelineHTML += `<div class="timeline-item milestone"><div class="title">Handover</div><div class="note">Year ${inputs.handoverYear}, Q${inputs.handoverQuarter * 4}</div></div>`;
+            timelineHTML += `<div class="timeline-item milestone"><div class="title">Handover</div><div class="note">${inputs.handoverYear}, Q${inputs.handoverQuarter * 4}</div></div>`;
 
             for (let i = 1; i <= inputs.postHandoverPaymentYears; i++) {
                 if (r.annualPostHandoverPayment > 0) {
-                    timelineHTML += `<div class="timeline-item"><div class="title">Post-handover Year ${i}</div><div class="amount">AED ${f(r.annualPostHandoverPayment)}</div><div class="note">${p(r.annualPostHandoverPayment)}% of property price</div></div>`;
+                    const currentYear = inputs.handoverYear + i;
+                    timelineHTML += `<div class="timeline-item"><div class="title">Post-handover Year ${i} (${currentYear})</div><div class="amount">AED ${f(r.annualPostHandoverPayment)}</div><div class="note">${p(r.annualPostHandoverPayment)}% of property price</div></div>`;
                 }
             }
 
@@ -670,20 +694,51 @@
             container.innerHTML = timelineHTML;
         }
 
-        function renderCapitalAppreciationChart(timeline, initialPrice, preciseHandoverPoint) {
+        function renderCapitalAppreciationChart(timeline, initialPrice, handoverYear, handoverQuarter) {
             const ctx = document.getElementById('capitalAppreciationChart').getContext('2d');
-            const labels = ['Start', ...timeline.map(item => `Year ${item.year}`)];
-            const data = [initialPrice, ...timeline.map(item => item.propertyValue)];
+            const purchaseYear = new Date().getFullYear();
+
+            // This data assembly is now correct because yearLabel has been fixed
+            const chartData = [{ x: purchaseYear, y: initialPrice }];
+            timeline.forEach(item => {
+                chartData.push({ x: item.yearLabel, y: item.propertyValue });
+            });
 
             if (capitalAppreciationChartInstance) {
                 capitalAppreciationChartInstance.destroy();
             }
 
+            // The precise handover value is now calculated relative to the purchase year
+            const preciseHandoverValue = purchaseYear + (handoverYear - purchaseYear) + handoverQuarter;
+
             capitalAppreciationChartInstance = new Chart(ctx, {
                 type: 'line',
-                data: { labels, datasets: [{ label: 'Property Value (AED)', data, borderColor: '#0d6efd', backgroundColor: 'rgba(13, 110, 253, 0.1)', fill: true, tension: 0.2 }] },
+                data: {
+                    datasets: [{
+                        label: 'Property Value (AED)',
+                        data: chartData,
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                        fill: true,
+                        tension: 0.2
+                    }]
+                },
                 options: {
-                    scales: { y: { ticks: { callback: (value) => 'AED ' + value.toLocaleString() } } },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            min: purchaseYear, // This forces the axis to start correctly
+                            ticks: {
+                                stepSize: 1,
+                                callback: function (value) {
+                                    return Math.floor(value);
+                                }
+                            }
+                        },
+                        y: {
+                            ticks: { callback: (value) => 'AED ' + value.toLocaleString() }
+                        }
+                    },
                     plugins: {
                         tooltip: { callbacks: { label: (context) => 'AED ' + context.parsed.y.toLocaleString() } },
                         annotation: {
@@ -691,7 +746,7 @@
                                 handoverLine: {
                                     type: 'line',
                                     scaleID: 'x',
-                                    value: preciseHandoverPoint,
+                                    value: preciseHandoverValue,
                                     borderColor: '#dc3545',
                                     borderWidth: 2,
                                     borderDash: [6, 6],
