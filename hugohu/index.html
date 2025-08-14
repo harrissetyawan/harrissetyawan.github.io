@@ -5,12 +5,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Advanced Off-Plan ROI Calculator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
     <style>
         :root {
-            --background-color: #f8f9fa;
-            --container-bg: #ffffff;
-            --input-bg: #f8f9fa;
-            --border-color: #dee2e6;
+            --background-color: #e5e3df;
+            --container-bg: #e5e3df;
+            --input-bg: #e5e3df;
+            --border-color: #241f1c;
             --text-primary: #212529;
             --text-secondary: #6c757d;
             --accent-blue: #0d6efd;
@@ -20,8 +23,12 @@
             --button-hover-bg: #393939;
         }
 
+        canvas {
+            background-color: var(--border-color);
+        }
+
         body {
-            font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+            font-family: "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
             background-color: var(--background-color);
             color: var(--text-primary);
             margin: 0;
@@ -30,6 +37,7 @@
             justify-content: center;
         }
 
+        
         .calculator-wrapper {
             max-width: 900px;
             width: 100%;
@@ -58,7 +66,10 @@
             border: 1px solid var(--border-color);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
         }
-
+        .input-container > h2 {
+            text-transform: uppercase;
+            font-weight: 400;
+        }
         .output-container {
             margin-top: 2rem;
         }
@@ -88,8 +99,9 @@
         }
 
         .input-group label {
-            color: var(--text-secondary);
+            color: #000;
             margin-bottom: 0.5rem;
+            font-weight: 250;
             font-size: 0.9rem;
         }
 
@@ -109,8 +121,9 @@
             -webkit-appearance: none;
             appearance: none;
             width: 100%;
-            height: 6px;
-            background: #e9ecef;
+            height: 1px;
+            accent-color: var(--border-color);
+            background: var(--border-color);
             outline: none;
             border-radius: 3px;
             margin-top: 1rem;
@@ -121,7 +134,7 @@
             appearance: none;
             width: 20px;
             height: 20px;
-            background: var(--accent-blue);
+            background: var(--border-color);
             cursor: pointer;
             border-radius: 50%;
         }
@@ -151,7 +164,7 @@
             border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 0.5rem;
-            background-color: var(--input-bg);
+            background-color: var(--border-color);
             margin-bottom: 2rem;
         }
 
@@ -161,7 +174,7 @@
             cursor: pointer;
             background: none;
             border: none;
-            color: var(--text-secondary);
+            color: var(--background-color);
             font-size: 1rem;
             font-weight: 500;
             border-radius: 6px;
@@ -213,15 +226,28 @@
             border: 1px solid var(--border-color);
         }
 
+        .graph {
+            background-color: var(--border-color) !important;
+            color: var(--background-color);
+        }
+
+        .graph h3 {
+            font-weight: 250 !important;
+            font-size: 1.4rem !important;
+            letter-spacing: 1.6px;
+            border-bottom: 1px solid #fff !important;
+        }
         .metric-card .label {
             color: var(--text-secondary);
             font-size: 0.9rem;
             margin-bottom: 0.25rem;
+            font-weight: 250;
         }
 
+        
         .metric-card .value {
             font-size: 1.75rem;
-            font-weight: 600;
+            font-weight: 400;
         }
 
         .metric-card .note {
@@ -230,7 +256,7 @@
         }
 
         .profit-section {
-            background-color: #1e293b;
+            background-color: var(--border-color);
             color: white;
             padding: 2rem;
             border-radius: 8px;
@@ -642,8 +668,8 @@
                 <div class="breakdown-list-item total"><span>Total Returns (Profit)</span><span class="value">AED ${f(r.totalProfit)}</span></div>
             </div>
         </div>
-        <div class="breakdown-box" style="grid-column: 1 / -1; margin-top: 2rem;">
-            <h3>Capital Appreciation Over Time</h3>
+        <div class="breakdown-box graph" style="grid-column: 1 / -1; margin-top: 2rem;">
+            <h3>CAPITAL APPRECIATION OVER TIME</h3>
             <canvas id="capitalAppreciationChart"></canvas>
         </div>`;
 
@@ -706,8 +732,10 @@
                     datasets: [{
                         label: 'Property Value (AED)',
                         data: chartData,
-                        borderColor: '#0d6efd',
-                        backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                        borderColor: 'rgb(251 114 0)',
+                        borderWidth:'1',
+                        backgroundColor: 'rgb(190 140 55 / 70%)',
+                        pointBackgroundColor: '#fff',
                         fill: true,
                         tension: 0.2
                     }]
@@ -715,6 +743,9 @@
                 options: {
                     scales: {
                         x: {
+                            grid: {
+                                display: false
+                            },
                             type: 'linear',
                             min: purchaseYear,
                             ticks: {
@@ -723,6 +754,7 @@
                             }
                         },
                         y: {
+                            grid: { display: true, color: '#fff' },
                             ticks: { callback: (value) => 'AED ' + value.toLocaleString() }
                         }
                     },

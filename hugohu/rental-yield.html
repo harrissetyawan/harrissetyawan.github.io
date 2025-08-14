@@ -5,22 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rental Yield Calculator</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
     <style>
         :root {
-            --background-color: #f8f9fa;
-            --container-bg: #ffffff;
-            --input-bg: #f8f9fa;
-            --border-color: #dee2e6;
+            --background-color: #e5e3df;
+            --container-bg: #e5e3df;
+            --input-bg: #e5e3df;
+            --border-color: #241f1c;
             --text-primary: #212529;
             --text-secondary: #6c757d;
             --accent-blue: #0d6efd;
-            --accent-green: #198754;
-            --button-bg: #9b6262;
+            --accent-green: #212121;
+            --accent-gold: #ffc107;
+            --button-bg: #212121;
             --button-hover-bg: #393939;
         }
 
         body {
-            font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+            font-family: "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
             background-color: var(--background-color);
             color: var(--text-primary);
             margin: 0;
@@ -31,8 +35,8 @@
 
         .calculator-wrapper { max-width: 900px; width: 100%; }
         .calculator-header { text-align: center; margin-bottom: 2rem; }
-        .calculator-header h1 { font-size: 1.8rem; color: var(--text-primary); }
-        .calculator-header p { font-size: 1rem; color: var(--text-secondary); }
+        .calculator-header h1 { font-size: 1.8rem; color: var(--text-primary); text-transform: uppercase !important; font-weight: 400; }
+        .calculator-header p { font-size: 1rem; color: var(--text-primary); font-weight: 300; }
 
         .input-container, .output-container {
             background-color: var(--container-bg);
@@ -42,14 +46,18 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
         
+        .input-container h2 {
+            font-weight: 400; text-transform: capitalize !important;
+        }
         .output-container { margin-top: 2rem; }
 
         h2 { font-weight: 600; font-size: 1.25rem; margin-top: 2rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; }
+
         h2:first-of-type { margin-top: 0; }
         
         .section-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem 2rem; }
         .input-group { display: flex; flex-direction: column; }
-        .input-group label { color: var(--text-secondary); margin-bottom: 0.5rem; font-size: 0.9rem; }
+        .input-group label { color: var(--text-primary); margin-bottom: 0.5rem; font-size: 0.9rem; }
         .input-group input[type="number"], .input-group select {
             background-color: var(--input-bg); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 12px; font-size: 1rem; width: 100%; box-sizing: border-box;
         }
@@ -90,7 +98,7 @@
     </div>
 
     <div class="input-container">
-        <h2>Property & Rental Details</h2>
+        <h2>PROPERTY & RENTAL DETAILS</h2>
         <div class="section-grid">
             <div class="input-group"><label>Property Price (AED)</label>
                 <input type="number" data-type="currency" id="propertyPrice">
@@ -107,7 +115,8 @@
         <div class="section-grid">
             <div class="input-group">
                 <!-- <label>Service Charge Calculation</label> -->
-                <!-- <div class="service-charge-toggle">
+                <!-- 
+                <div class="service-charge-toggle">
                     <label><input type="radio" name="serviceChargeMethod" value="auto" checked> Auto</label>
                     <label><input type="radio" name="serviceChargeMethod" value="manual"> Manual</label>
                 </div> -->
@@ -299,14 +308,16 @@
                 datasets: [{
                     label: 'Net Rental Yield (%)',
                     data: data,
-                    borderColor: 'var(--accent-green)',
-                    backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                    borderColor: 'rgb(251 114 0)',
+                        borderWidth:'1',
+                        backgroundColor: 'rgb(190 140 55 / 70%)',
+                        pointBackgroundColor: '#fff',
                     fill: true,
                     tension: 0.1
                 }]
             },
             options: {
-                scales: { y: { ticks: { callback: (value) => value + '%' } } }
+                scales: { x: { grid: { display: false } }, y: { ticks: { callback: (value) => value + '%' } } }
             }
         });
     }
