@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aerux MDU Value Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style type="text/tailwindcss">
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f8fa; /* Lighter gray background */
+        }
+        .input-group {
+            @apply relative;
+        }
+        .input-symbol {
+            @apply absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-500 text-sm;
+        }
+        .input-symbol-right {
+            @apply absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-gray-500 text-sm;
+        }
+        .input-label {
+            @apply text-sm font-medium text-gray-700 mb-1.5;
+        }
+        .input-field {
+            @apply block w-full bg-gray-50 border border-gray-300 rounded-lg shadow-sm py-2.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition duration-200;
+        }
+        .input-field-pl {
+            padding-left: 2rem; 
+        }
+        .input-field-pr {
+            padding-right: 2rem;
+        }
+        .output-label {
+            @apply text-sm text-gray-500;
+        }
+        .output-value {
+            @apply text-xl font-semibold text-gray-800;
+        }
+        .card {
+            background: white;
+            @apply p-6 rounded-2xl shadow-lg border border-gray-200/60 transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
+            /* Animation */
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeInUp 0.5s ease-out forwards;
+        }
+        .card-title {
+            @apply flex items-center text-lg font-bold text-gray-900 mb-5 pb-3 border-b border-gray-200;
+        }
+        .card-title svg {
+            @apply w-6 h-6 mr-3 text-indigo-500;
+        }
+        .key-metric-card {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            @apply p-8 rounded-2xl shadow-2xl;
+        }
+        .key-metric-card .output-label {
+            @apply text-indigo-200 text-base;
+        }
+        .key-metric-card .output-value {
+            @apply text-white text-4xl font-extrabold mt-1;
+        }
+        
+        /* Animation */
+        @keyframes fadeInUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        /* Staggered animation */
+        .card:nth-child(1) { animation-delay: 0.1s; }
+        .card:nth-child(2) { animation-delay: 0.2s; }
+        .card:nth-child(3) { animation-delay: 0.3s; }
+        .card:nth-child(4) { animation-delay: 0.4s; }
+        .card:nth-child(5) { animation-delay: 0.5s; }
+        .card:nth-child(6) { animation-delay: 0.6s; }
+        #financialSummary .card:nth-child(1) { animation-delay: 0.2s; }
+        #financialSummary .card:nth-child(2) { animation-delay: 0.3s; }
+        #financialSummary .card:nth-child(3) { animation-delay: 0.4s; }
+        #financialSummary .card:nth-child(4) { animation-delay: 0.5s; }
+        #financialSummary .card:nth-child(5) { animation-delay: 0.6s; }
+        #financialSummary .card:nth-child(6) { animation-delay: 0.7s; }
+
+    </style>
+</head>
+
+<body class="p-4 sm:p-6 md:p-10">
+
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-12 text-center">
+            <h1 class="text-4xl sm:text-5xl font-extrabold text-gray-900 tracking-tight">MDU Value Calculator</h1>
+            <p class="mt-3 text-lg text-gray-600">Instantly quantify the financial upside of implementing Aerux.</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-5 gap-8 xl:gap-10">
+
+            <div class="lg:col-span-3 space-y-7">
+                <h2 class="text-2xl font-bold text-gray-800 tracking-tight">Model Assumptions</h2>
+                <div id="modelAssumptions" class="space-y-7">
+                    <!-- Input sections will be dynamically generated here -->
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 space-y-7">
+                <h2 class="text-2xl font-bold text-gray-800 tracking-tight">Financial Summary</h2>
+                <div id="financialSummary" class="space-y-7">
+                    <!-- Key Metric and other output sections will be dynamically generated here -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const calculatorData = {
+            "modelAssumptions": {
+                "scopeAndPortfolio": { title: "Scope & Portfolio", icon: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h6M9 11.25h6m-6 4.5h6M6.75 21v-5.25a2.25 2.25 0 012.25-2.25h3.75a2.25 2.25 0 012.25 2.25V21M6.75 3v2.25a2.25 2.25 0 002.25 2.25h3.75a2.25 2.25 0 002.25-2.25V3" /></svg>`, fields: [{ parameter: "# of Properties", value: 1, type: 'number' }, { parameter: "Avg Units per Property", value: 100, type: 'number' }] },
+                "adoptionAndOccupancy": { title: "Adoption & Occupancy", icon: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m-7.5-2.962A3.75 3.75 0 0112 15v-2.25L8.625 9.75M15.75 9.75L12 12v-2.25" /><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 21a3 3 0 01-5.858-1.658l-6.842-3.909a3 3 0 01.166-5.858l6.842-3.909a3 3 0 015.858 1.658l6.842 3.909a3 3 0 01-.166 5.858l-6.842 3.909A3 3 0 0115.75 21z" /></svg>`, fields: [{ parameter: "Occupancy rate (%)", value: 95, type: 'percentage' }, { parameter: "Adoption rate among occupied units (%)", value: 80, type: 'percentage' }] },
+                "premiumEconomics": { title: "Premium Economics", icon: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`, fields: [{ parameter: "Monthly rent premium per adopting unit (USD)", value: 50, type: 'currency' }, { parameter: "Annual premium growth (%) Fixed", value: 2, type: 'percentage' }] },
+                "turnoverAndRemarketing": { title: "Turnover & Remarketing", icon: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.092 1.21-.138 2.43-.138 3.662v4.159c0 1.232.046 2.453.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7c.092-1.21.138-2.43.138-3.662v-4.159z" /><path stroke-linecap="round" stroke-linejoin="round" d="M12 12v2.25m-4.5-4.5v6.75" /></svg>`, fields: [{ parameter: "Baseline annual turnover rate (%)", value: 50, type: 'percentage' }, { parameter: "Turnover reduction with Aerux (%)", value: 15, type: 'percentage' }, { parameter: "Cost per turnover", value: 2500, type: 'currency' }, { parameter: "Annual inflation on turnover cost (%)", value: 0, type: 'percentage' }] },
+                "assetValuation": { title: "Asset Valuation", icon: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" /></svg>`, fields: [{ parameter: "Cap rate", value: 6, type: 'percentage' }] },
+                "notes": { title: "Notes", icon: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>`, items: ["Adoption applies to occupied units only.", "Growth compounds the monthly premium each year.", "Turnover reduction applies only to adopting units."] }
+            },
+            "financialSummary": {
+                "keyMetric": { title: "Key Metric", fields: [{ item: "5-year total NOI impact" }] },
+                "portfolioBreakdown": { title: "Portfolio Breakdown", fields: [{ item: "Total units" }, { item: "Effective adopting units" }] },
+                "year1PremiumUplift": { title: "Year 1 — Premium Uplift", fields: [{ item: "Annual premium uplift" }] },
+                "cumulativePremiumUplift": { title: "Cumulative Premium Uplift", fields: [{ item: "3-year Uplift" }, { item: "5-year Uplift" }] },
+                "turnoverSavings": { title: "Turnover Savings", fields: [{ item: "Year 1 turnover savings" }, { item: "3-year Savings" }, { item: "5-year Savings" }] },
+                "assetValuationGrowth": { title: "Asset Valuation Growth", fields: [{ item: "Year 1 NOI lift" }, { item: "Asset value lift" }] },
+                "summary": { title: "Summary", fields: [{ item: "Year 1 total NOI impact" }, { item: "3-year total NOI impact" }, { item: "5-year total NOI impact" }] }
+            },
+            "formulas": {
+                "Total units": `data['# of Properties'] * data['Avg Units per Property']`,
+                "Effective adopting units": `data['Total units'] * data['Occupancy rate (%)'] * data['Adoption rate among occupied units (%)']`,
+                "Annual premium uplift": `data['Effective adopting units'] * data['Monthly rent premium per adopting unit (USD)'] * 12`,
+                "3-year Uplift_cumulativePremiumUplift": `data['Annual premium growth (%) Fixed'] == 0 ? data['Annual premium uplift'] * 3 : data['Annual premium uplift'] * ((1 + data['Annual premium growth (%) Fixed'])**3 - 1) / data['Annual premium growth (%) Fixed']`,
+                "5-year Uplift_cumulativePremiumUplift": `data['Annual premium growth (%) Fixed'] == 0 ? data['Annual premium uplift'] * 5 : data['Annual premium uplift'] * ((1 + data['Annual premium growth (%) Fixed'])**5 - 1) / data['Annual premium growth (%) Fixed']`,
+                "Year 1 turnover savings": `data['Effective adopting units'] * data['Baseline annual turnover rate (%)'] * data['Turnover reduction with Aerux (%)'] * data['Cost per turnover']`,
+                "3-year Savings_turnoverSavings": `data['Annual inflation on turnover cost (%)'] == 0 ? data['Year 1 turnover savings'] * 3 : data['Year 1 turnover savings'] * ((1 + data['Annual inflation on turnover cost (%)'])**3 - 1) / data['Annual inflation on turnover cost (%)']`,
+                "5-year Savings_turnoverSavings": `data['Annual inflation on turnover cost (%)'] == 0 ? data['Year 1 turnover savings'] * 5 : data['Year 1 turnover savings'] * ((1 + data['Annual inflation on turnover cost (%)'])**5 - 1) / data['Annual inflation on turnover cost (%)']`,
+                "Year 1 NOI lift": `data['Annual premium uplift'] + data['Year 1 turnover savings']`,
+                "Asset value lift": `data['Year 1 NOI lift'] / data['Cap rate']`,
+                "Year 1 total NOI impact": `data['Year 1 NOI lift']`,
+                "3-year total NOI impact": `data['3-year Uplift_cumulativePremiumUplift'] + data['3-year Savings_turnoverSavings']`,
+                "5-year total NOI impact": `data['5-year Uplift_cumulativePremiumUplift'] + data['5-year Savings_turnoverSavings']`
+            }
+        };
+
+        const toId = (str) => str.replace(/[^a-zA-Z0-9]/g, '');
+        const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+
+        const assumptionsContainer = document.getElementById('modelAssumptions');
+        const summaryContainer = document.getElementById('financialSummary');
+
+        function initializeUI() {
+            // Create input fields
+            Object.values(calculatorData.modelAssumptions).forEach(section => {
+                const card = document.createElement('div');
+                card.className = 'card';
+
+                const title = document.createElement('h3');
+                title.className = 'card-title';
+                title.innerHTML = section.icon + section.title;
+                card.appendChild(title);
+
+                if (section.fields) {
+                    const grid = document.createElement('div');
+                    grid.className = 'grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-5';
+                    section.fields.forEach(field => {
+                        const div = document.createElement('div');
+                        const label = document.createElement('label');
+                        label.className = 'input-label';
+                        label.textContent = field.parameter;
+
+                        const inputGroup = document.createElement('div');
+                        inputGroup.className = 'input-group';
+
+                        const input = document.createElement('input');
+                        input.type = 'number';
+                        input.step = 'any';
+                        input.id = toId(field.parameter);
+                        input.value = field.value;
+                        input.className = 'input-field';
+                        input.addEventListener('input', calculate);
+
+                        if (field.type === 'currency' || field.type === 'percentage') {
+                            const symbol = document.createElement('span');
+                            symbol.className = field.type === 'currency' ? 'input-symbol' : 'input-symbol-right';
+                            symbol.textContent = field.type === 'currency' ? '$' : '%';
+                            input.classList.add(field.type === 'currency' ? 'input-field-pl' : 'input-field-pr');
+                            inputGroup.appendChild(symbol);
+                        }
+
+                        inputGroup.appendChild(input);
+                        div.appendChild(label);
+                        div.appendChild(inputGroup);
+                        grid.appendChild(div);
+                    });
+                    card.appendChild(grid);
+                } else if (section.items) { // For notes
+                    const list = document.createElement('ul');
+                    list.className = 'list-disc list-inside space-y-2 text-sm text-gray-600';
+                    section.items.forEach(noteText => {
+                        const li = document.createElement('li');
+                        li.textContent = noteText;
+                        list.appendChild(li);
+                    });
+                    card.appendChild(list);
+                }
+                assumptionsContainer.appendChild(card);
+            });
+
+            // Create output fields
+            Object.entries(calculatorData.financialSummary).forEach(([key, section]) => {
+                const isKeyMetric = key === 'keyMetric';
+                const card = document.createElement('div');
+                card.className = isKeyMetric ? 'key-metric-card card' : 'card';
+
+                if (!isKeyMetric) {
+                    const title = document.createElement('h3');
+                    title.className = 'card-title';
+                    title.textContent = section.title;
+                    card.appendChild(title);
+                }
+
+                const grid = document.createElement('div');
+                const fieldsCount = section.fields.length;
+                grid.className = `grid grid-cols-1 ${fieldsCount > 1 && !isKeyMetric ? 'sm:grid-cols-2' : ''} gap-x-5 gap-y-4`;
+
+                section.fields.forEach(field => {
+                    const div = document.createElement('div');
+                    const label = document.createElement('p');
+                    label.className = 'output-label';
+                    label.textContent = field.item;
+
+                    const valueEl = document.createElement('p');
+                    valueEl.id = toId(field.item);
+                    valueEl.className = 'output-value';
+
+                    div.appendChild(label);
+                    div.appendChild(valueEl);
+                    grid.appendChild(div);
+                });
+                card.appendChild(grid);
+                summaryContainer.appendChild(card);
+            });
+        }
+
+        function calculate() {
+            const values = {};
+
+            // 1. Gather and process input values
+            Object.values(calculatorData.modelAssumptions).forEach(section => {
+                if (!section.fields) return;
+                section.fields.forEach(field => {
+                    const inputEl = document.getElementById(toId(field.parameter));
+                    let value = parseFloat(inputEl.value) || 0;
+                    // if (field.type === 'percentage') value /= 100;
+                    // This new code checks the parameter name and skips dividing the growth rates by 100
+                    if (field.type === 'percentage') {
+                        if (field.parameter !== 'Annual premium growth (%) Fixed' &&
+                            field.parameter !== 'Annual inflation on turnover cost (%)') {
+                            value /= 100;
+                        }
+                    }
+                    values[field.parameter] = value;
+                });
+            });
+
+            // 2. Calculate summary fields using the formulas object
+            const calculationOrder = Object.keys(calculatorData.formulas);
+            calculationOrder.forEach(itemName => {
+                const uniqueItemName = itemName.includes('_') ? itemName : itemName;
+                const formulaKey = itemName;
+                const formula = calculatorData.formulas[formulaKey].replace(/data\['(.*?)'\]/g, (match, p1) => `values['${p1}']`);
+                const calculatedValue = new Function('values', `return ${formula}`)(values);
+
+                const baseItemName = itemName.split('_')[0];
+                values[uniqueItemName] = calculatedValue;
+                if (!values[baseItemName]) {
+                    values[baseItemName] = calculatedValue;
+                }
+
+                // 3. Update the UI --- THIS IS THE CORRECTED PART ---
+                // This code finds ALL elements with a matching ID (like "5-year") and updates each one.
+                const outputEls = document.querySelectorAll(`[id="${toId(baseItemName)}"]`);
+                outputEls.forEach(outputEl => {
+                    const isCurrency = baseItemName.toLowerCase().includes('uplift') || baseItemName.toLowerCase().includes('savings') || baseItemName.toLowerCase().includes('lift') || baseItemName.toLowerCase().includes('impact') || baseItemName.toLowerCase().includes('value') || baseItemName.toLowerCase().startsWith('3-year') || baseItemName.toLowerCase().startsWith('5-year');
+                    outputEl.textContent = isCurrency ? formatCurrency(calculatedValue) : Math.round(calculatedValue).toLocaleString();
+                });
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeUI();
+            calculate();
+        });
+    </script>
+</body>
+
+</html>
