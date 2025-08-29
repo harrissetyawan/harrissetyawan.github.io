@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fire Hydrant Flow Test Calculator</title>
+    <!-- Google Fonts: Inter and Roboto -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Roboto:wght@400&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for graphing -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- jsPDF for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- html2canvas to capture HTML for PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        /* Custom styles for a cleaner look */
+        body {
+            font-family: 'Roboto', sans-serif; /* Updated */
+            font-weight: 400; /* Updated */
+            font-size: 16px; /* Updated */
+            line-height: 150%; /* Updated */
+            color: #505050; /* Updated */
+        }
+        .heading-style {
+            font-family: 'Inter', sans-serif;
+            font-weight: 700;
+            font-size: 25px;
+            line-height: 140%;
+            text-transform: capitalize;
+            color: #101828;
+        }
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: #e5e7eb;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            padding: 32px;
+            transition: all 0.3s ease-in-out;
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            height: 54px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-align: center;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Inter', sans-serif; /* Ensure button text is clear */
+        }
+        .btn-primary {
+            background-color: #BC1A1C;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #a01618;
+            transform: translateY(-2px);
+        }
+        .btn-secondary {
+            background-color: #6b7280;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #4b5563;
+            transform: translateY(-2px);
+        }
+        .btn-outline {
+            background-color: transparent;
+            color: #BC1A1C;
+            border: 1px solid #BC1A1C;
+        }
+        .btn-outline:hover {
+            background-color: #fdecea;
+            transform: translateY(-2px);
+        }
+        .input-field {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            font-family: 'Roboto', sans-serif; /* Ensure input text matches body */
+            font-size: 16px;
+        }
+        .input-field:focus {
+            outline: none;
+            border: 1.5px solid #0044A3; /* Updated: Navy Blue 600 */
+            box-shadow: 0 0 0 2px rgba(0, 68, 163, 0.15); /* Optional: subtle blue shadow */
+        }
+        .form-label {
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size: 14px;
+            line-height: 150%;
+            letter-spacing: 0.05em; /* 5% */
+            text-transform: uppercase;
+        }
+        .error-message {
+            color: #ef4444;
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+            display: none; /* Hidden by default */
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-5xl">
+        <!-- Header Section -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900" style="font-family: 'Inter', sans-serif;">Fire Hydrant Flow Test Calculator</h1>
+            <p class="text-md mt-2">Based on Hazen-Williams Formula (NFPA 291)</p>
+        </header>
+
+        <main>
+            <!-- Input and Results Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                <!-- Input Section -->
+                <div class="card">
+                    <h2 class="heading-style mb-6 border-b pb-3">Test Data Inputs</h2>
+                    <form id="flowTestForm" class="space-y-6">
+                        <div>
+                            <label for="staticPressure" class="block font-medium mb-1 form-label">Static Pressure (Ps), psi</label>
+                            <input type="number" id="staticPressure" class="input-field" placeholder="e.g., 70" required>
+                            <p id="staticPressureError" class="error-message"></p>
+                        </div>
+                        <div>
+                            <label for="residualPressure" class="block font-medium mb-1 form-label">Residual Pressure (Pr), psi</label>
+                            <input type="number" id="residualPressure" class="input-field" placeholder="e.g., 60" required>
+                            <p id="residualPressureError" class="error-message">Residual pressure must be less than static pressure.</p>
+                        </div>
+                        <div>
+                            <label for="pitotPressure" class="block font-medium mb-1 form-label">Pitot Pressure (Pp), psi</label>
+                            <input type="number" id="pitotPressure" class="input-field" placeholder="e.g., 25" required>
+                        </div>
+                        <div>
+                            <label for="nozzleDiameter" class="block font-medium mb-1 form-label">Nozzle Diameter (d), inches</label>
+                            <select id="nozzleDiameter" class="input-field">
+                                <option value="2.5">2.5"</option>
+                                <option value="4.5">4.5"</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                            <input type="number" id="customNozzleDiameter" class="input-field mt-2 hidden" placeholder="Enter custom diameter">
+                        </div>
+                        <div>
+                            <label for="hydrantCoefficient" class="block font-medium mb-1 form-label">Hydrant Coefficient (C)</label>
+                            <select id="hydrantCoefficient" class="input-field">
+                                <option value="0.90">0.90 (Rounded)</option>
+                                <option value="0.80">0.80 (Square Edge)</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                            <input type="number" step="0.01" id="customHydrantCoefficient" class="input-field mt-2 hidden" placeholder="Enter custom coefficient">
+                        </div>
+                         <div>
+                            <label for="desiredPressure" class="block font-medium mb-1 form-label">Desired Residual Pressure (Pd), psi</label>
+                            <input type="number" id="desiredPressure" class="input-field" value="20" required>
+                        </div>
+                        <div class="flex space-x-4 pt-4">
+                            <button type="submit" class="btn btn-primary w-full">Calculate</button>
+                            <button type="button" id="resetButton" class="btn btn-secondary w-full">Reset</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Results Section -->
+                <div id="results-container" class="card hidden">
+                     <h2 class="heading-style mb-6 border-b pb-3">Calculation Results</h2>
+                     <div class="space-y-4 text-lg">
+                        <div>
+                            <span class="font-medium">Nozzle Flow (Qf):</span>
+                            <span id="qfResult" class="font-bold text-blue-600 float-right">--- gpm</span>
+                        </div>
+                        <hr>
+                        <div>
+                            <span class="font-medium">Available Flow @ <span id="pdLabel">20</span> psi (Qd):</span>
+                            <span id="qdResult" class="font-bold text-green-600 float-right">--- gpm</span>
+                        </div>
+                     </div>
+                     <div class="mt-8">
+                        <canvas id="flowChart"></canvas>
+                     </div>
+                     <div class="flex space-x-4 mt-6">
+                        <button id="downloadPng" class="btn btn-outline w-full">Download Graph (PNG)</button>
+                        <button id="downloadPdf" class="btn btn-outline w-full">Download Report (PDF)</button>
+                     </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer Section -->
+        <footer class="text-center mt-12 text-sm">
+            <p>Calculations based on Hazen-Williams formula, NFPA 291.</p>
+        </footer>
+    </div>
+
+    <script>
+        // DOM element references
+        const form = document.getElementById('flowTestForm');
+        const staticPressureEl = document.getElementById('staticPressure');
+        const residualPressureEl = document.getElementById('residualPressure');
+        const pitotPressureEl = document.getElementById('pitotPressure');
+        const nozzleDiameterEl = document.getElementById('nozzleDiameter');
+        const customNozzleDiameterEl = document.getElementById('customNozzleDiameter');
+        const hydrantCoefficientEl = document.getElementById('hydrantCoefficient');
+        const customHydrantCoefficientEl = document.getElementById('customHydrantCoefficient');
+        const desiredPressureEl = document.getElementById('desiredPressure');
+        const resetButton = document.getElementById('resetButton');
+
+        const resultsContainer = document.getElementById('results-container');
+        const qfResultEl = document.getElementById('qfResult');
+        const qdResultEl = document.getElementById('qdResult');
+        const pdLabelEl = document.getElementById('pdLabel');
+        
+        const residualPressureErrorEl = document.getElementById('residualPressureError');
+
+        const downloadPngButton = document.getElementById('downloadPng');
+        const downloadPdfButton = document.getElementById('downloadPdf');
+
+        let flowChart = null;
+
+        // --- Event Listeners ---
+
+        // Handle custom input visibility for nozzle diameter
+        nozzleDiameterEl.addEventListener('change', (e) => {
+            customNozzleDiameterEl.classList.toggle('hidden', e.target.value !== 'custom');
+        });
+
+        // Handle custom input visibility for hydrant coefficient
+        hydrantCoefficientEl.addEventListener('change', (e) => {
+            customHydrantCoefficientEl.classList.toggle('hidden', e.target.value !== 'custom');
+        });
+
+        // Handle form submission
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (validateInputs()) {
+                calculateAndDisplayResults();
+            }
+        });
+
+        // Handle reset button click
+        resetButton.addEventListener('click', () => {
+            form.reset();
+            resultsContainer.classList.add('hidden');
+            customNozzleDiameterEl.classList.add('hidden');
+            customHydrantCoefficientEl.classList.add('hidden');
+            if (flowChart) {
+                flowChart.destroy();
+                flowChart = null;
+            }
+            // Clear error messages
+            residualPressureErrorEl.style.display = 'none';
+            residualPressureEl.classList.remove('border-red-500');
+        });
+
+        // Handle PNG download
+        downloadPngButton.addEventListener('click', () => {
+            if (flowChart) {
+                const link = document.createElement('a');
+                link.href = flowChart.toBase64Image();
+                link.download = 'fire-hydrant-flow-curve.png';
+                link.click();
+            }
+        });
+
+        // Handle PDF download
+        downloadPdfButton.addEventListener('click', () => {
+            // Use html2canvas to capture the results container
+            html2canvas(resultsContainer).then(canvas => {
+                const imgData = canvas.toDataURL('image/png');
+                // Initialize jsPDF. 'p' for portrait, 'mm' for millimeters, 'a4' for size.
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                
+                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                pdf.save('fire-hydrant-test-report.pdf');
+            });
+        });
+
+        // --- Core Functions ---
+
+        /**
+         * Validates user inputs and displays error messages.
+         * @returns {boolean} - True if all inputs are valid, false otherwise.
+         */
+        function validateInputs() {
+            let isValid = true;
+            const ps = parseFloat(staticPressureEl.value);
+            const pr = parseFloat(residualPressureEl.value);
+
+            // Reset previous errors
+            residualPressureErrorEl.style.display = 'none';
+            residualPressureEl.classList.remove('border-red-500');
+
+            if (pr >= ps) {
+                residualPressureErrorEl.style.display = 'block';
+                residualPressureEl.classList.add('border-red-500');
+                isValid = false;
+            }
+            
+            // Add other validations as needed
+            
+            return isValid;
+        }
+
+        /**
+         * Main function to perform calculations and update the UI.
+         */
+        function calculateAndDisplayResults() {
+            // 1. Get all input values
+            const ps = parseFloat(staticPressureEl.value);
+            const pr = parseFloat(residualPressureEl.value);
+            const pp = parseFloat(pitotPressureEl.value);
+            const pd = parseFloat(desiredPressureEl.value);
+
+            const d = (nozzleDiameterEl.value === 'custom') 
+                ? parseFloat(customNozzleDiameterEl.value) 
+                : parseFloat(nozzleDiameterEl.value);
+
+            const c = (hydrantCoefficientEl.value === 'custom')
+                ? parseFloat(customHydrantCoefficientEl.value)
+                : parseFloat(hydrantCoefficientEl.value);
+
+            // 2. Perform calculations using the formulas
+            // Formula 1: Flow from Nozzle (Qf)
+            const qf = 29.83 * c * Math.pow(d, 2) * Math.sqrt(pp);
+
+            // Formula 2: Available Flow at Desired Residual Pressure (Qd)
+            const pressureRatio = (ps - pd) / (ps - pr);
+            const qd = qf * Math.pow(pressureRatio, 0.53146);
+
+            // 3. Update the results display
+            qfResultEl.textContent = `${Math.round(qf)} gpm`;
+            pdLabelEl.textContent = pd;
+            qdResultEl.textContent = `${Math.round(qd)} gpm`;
+
+            resultsContainer.classList.remove('hidden');
+
+            // 4. Generate and display the graph
+            generateGraph({ ps, pr, pd, qf, qd });
+        }
+
+        /**
+         * Generates the flow vs. pressure graph using Chart.js.
+         * @param {object} data - The calculated data for plotting.
+         */
+        function generateGraph(data) {
+            const { ps, pr, pd, qf, qd } = data;
+            const ctx = document.getElementById('flowChart').getContext('2d');
+
+            // Destroy the old chart instance if it exists
+            if (flowChart) {
+                flowChart.destroy();
+            }
+
+            // Generate data points for the flow curve
+            const curveData = [];
+            for (let currentPr = ps; currentPr >= 0; currentPr -= 2) {
+                // Prevent division by zero or negative results
+                if (ps > pr && ps > currentPr) {
+                   const flow = qf * Math.pow((ps - currentPr) / (ps - pr), 0.54);
+                   curveData.push({ x: currentPr, y: flow });
+                } else if (currentPr === ps) {
+                    curveData.push({ x: currentPr, y: 0 });
+                }
+            }
+            // Ensure the curve starts from static pressure (0 flow)
+            if (curveData.length === 0 || curveData[0].x !== ps) {
+                curveData.unshift({ x: ps, y: 0 });
+            }
+
+
+            flowChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Flow Curve',
+                            data: curveData.sort((a, b) => a.x - b.x), // Sort by pressure
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                        },
+                        {
+                            label: `Flow @ ${pd} psi`,
+                            data: [{ x: pd, y: qd }],
+                            borderColor: '#16a34a',
+                            backgroundColor: '#16a34a',
+                            pointRadius: 6,
+                            pointHoverRadius: 8,
+                            type: 'scatter',
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            position: 'bottom',
+                            title: {
+                                display: true,
+                                text: 'Residual Pressure (psi)',
+                                font: { size: 14, family: 'Roboto' }
+                            },
+                            ticks: {
+                                font: { family: 'Roboto' }
+                            },
+                            reverse: true, // Pressure decreases from left to right
+                            beginAtZero: false,
+                            max: ps + 5 // Give some space
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Flow (gpm)',
+                                font: { size: 14, family: 'Roboto' }
+                            },
+                            ticks: {
+                                font: { family: 'Roboto' }
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            bodyFont: { family: 'Roboto' },
+                            titleFont: { family: 'Roboto' },
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    label += `(${context.parsed.x.toFixed(1)} psi, ${context.parsed.y.toFixed(1)} gpm)`;
+                                    return label;
+                                }
+                            }
+                        },
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                font: { family: 'Roboto', size: 14 }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Set sample data on load for demonstration
+        function setSampleData() {
+            staticPressureEl.value = 70;
+            residualPressureEl.value = 60;
+            pitotPressureEl.value = 25;
+            nozzleDiameterEl.value = "2.5";
+            hydrantCoefficientEl.value = "0.90";
+            desiredPressureEl.value = 20;
+        }
+
+        window.onload = setSampleData;
+
+    </script>
+    <!-- <script src="js/test-formula.js"></script> -->
+    <!-- Uncomment the lines below to run additional verification tests -->
+    <script src="js/output-verification.js"></script>
+    <script src="js/nfpa-compliance-test.js"></script>
+</body>
+</html>
