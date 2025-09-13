@@ -38,187 +38,183 @@
     </style>
     <script>
         function zazzleTool() {
-            return {
-                searchTerm: '',
-                geminiApiKey: localStorage.getItem('zazzleToolGeminiApiKey') || '',
-                corsProxyUrl: localStorage.getItem('zazzleToolCorsProxyUrl') || '',
-                loading: false,
-                initialLoad: true,
-                error: null,
-                products: [],
-                topProduct: null,
-                view: 'products', // 'products', 'keywords', 'stores', 'ai_blueprint'
-                analysis: {
-                    keywords: [],
-                    stores: [],
-                },
-                aiBlueprint: {
-                    winningIdea: '',
-                    productDescription: '',
-                },
-                aiSuggestions: {
-                    titles: [],
-                    keywords: []
-                },
-                loadingBlueprint: false,
-                loadingSuggestions: false,
+        return {
+            searchTerm: '',
+            geminiApiKey: localStorage.getItem('zazzleToolGeminiApiKey') || '',
+            // Renamed for clarity: this now points to our backend worker.
+            backendUrl: localStorage.getItem('zazzleToolBackendUrl') || '',
+            loading: false,
+            initialLoad: true,
+            error: null,
+            products: [],
+            topProduct: null,
+            view: 'products', // 'products', 'keywords', 'stores', 'ai_blueprint'
+            analysis: {
+                keywords: [],
+                stores: [],
+            },
+            aiBlueprint: {
+                winningIdea: '',
+                productDescription: '',
+            },
+            aiSuggestions: {
+                titles: [],
+                keywords: []
+            },
+            loadingBlueprint: false,
+            loadingSuggestions: false,
 
-                search() {
-                    if (!this.searchTerm.trim()) {
-                        this.error = "Please enter a search keyword or niche.";
-                        return;
-                    }
-                    if (!this.corsProxyUrl.trim()) {
-                        this.error = "Please enter your Cloudflare CORS Anywhere worker URL to fetch data.";
-                        return;
-                    }
-                    this.loading = true;
-                    this.initialLoad = false;
-                    this.error = null;
-                    this.products = [];
-                    this.topProduct = null;
-                    this.aiBlueprint = { winningIdea: '', productDescription: '' };
-                    this.aiSuggestions = { titles: [], keywords: [] };
-                    this.view = 'products';
+            // The search function is now much simpler!
+            search() {
+                if (!this.searchTerm.trim()) {
+                    this.error = "Please enter a search keyword or niche.";
+                    return;
+                }
+                if (!this.backendUrl.trim()) {
+                    this.error = "Please enter your tool's Backend URL.";
+                    return;
+                }
+                this.loading = true;
+                this.initialLoad = false;
+                this.error = null;
+                this.products = [];
+                this.topProduct = null;
+                this.analysis = { keywords: [], stores: [] };
+                this.aiBlueprint = { winningIdea: '', productDescription: '' };
+                this.aiSuggestions = { titles: [], keywords: [] };
+                this.view = 'products';
 
-                    const encodedSearchTerm = encodeURIComponent(this.searchTerm.trim());
-                    const zazzleApiUrl = `https://www.zazzle.com/svc/z3/search/GetSearchWithProperties?cv=1&diffParameters=st%2Cpg%2Csd%2Cqs&diffProperties=ProductSearchTopIds&parameters=st%3Dorderitemcount_all%26pg%3D1%26sd%3Ddesc%26qs%3D${encodedSearchTerm}&properties=LightProductObjects%3Dfalse%26Maturity%3DR%26IsPublic%3Dtrue%26ShowFullSearchPages%3Dfalse%26LookAheadPages%3D16%26LimitTypesInSearch%3Dtrue%26MaxStoresPerPage%3D6%26IsHumanSearch%3Dfalse%26UserDefaultPageSize%3D120%26GetAggregations%3Dtrue%26LegoStoreAggregation%3Dfalse%26LegoStoreCategoryAggregation%3Dfalse%26UseCYOSearch%3Dfalse%26IgnoreCYOManual%3Dfalse%26GetGuidedSearch%3Dtrue%26IsBestSellerSearch%3Dtrue%26EnablePriceFilter%3Dfalse%26MinPrice%3D0%26MaxPrice%3D0%26ProductLimit%3D1%26DiversityMinScoreFactor%3D-1%26DiversityLimitWindowSize%3D16%26ProductDepartmentUrl%3D0%26IsBestGuessSearch%3Dfalse%26EnableNLS%3Dfalse&type=SearchResultsData&client=js`;
-                    
-                    let proxyUrl = this.corsProxyUrl.trim();
-                    if (proxyUrl.endsWith('/')) {
-                        proxyUrl = proxyUrl.slice(0, -1);
-                    }
-                    // Construct the URL with the target as a query string, as required by the Cloudflare worker.
-                    const fetchUrl = `${proxyUrl}/?x-url=${encodeURIComponent(zazzleApiUrl)}`;
-
-                    fetch(fetchUrl)
-                        .then(response => {
-                             if (response.status === 403) throw new Error('Proxy request was forbidden (403). Check your Cloudflare worker permissions.');
-                             if (!response.ok) throw new Error(`Network response error (Status: ${response.status}).`);
-                            return response.json();
-                        })
-                        .then(data => {
-                            if (data && data.success && data.data.search.searchResultsData.products) {
-                                if (data.data.search.searchResultsData.products.length === 0) {
-                                     this.error = "No products found for this search term. Try something broader.";
-                                } else {
-                                    this.products = data.data.search.searchResultsData.products;
-                                    this.processData();
-                                }
-                            } else {
-                                throw new Error("Invalid API data structure received from Zazzle.");
-                            }
-                        })
-                        .catch(error => {
-                            console.error('API call failed:', error);
-                            this.error = `API call failed: ${error.message} Check your CORS proxy URL and the browser console for details.`;
-                        })
-                        .finally(() => {
-                            this.loading = false;
-                        });
-                },
+                const encodedSearchTerm = encodeURIComponent(this.searchTerm.trim());
                 
-                processData() {
-                    this.identifyTopProduct();
-                    this.analyzeKeywords();
-                    this.analyzeStores();
-                    this.getAiProductBlueprint(); 
-                },
+                let workerUrl = this.backendUrl.trim();
+                if (workerUrl.endsWith('/')) {
+                    workerUrl = workerUrl.slice(0, -1);
+                }
+                
+                // The new, simple URL to our worker backend.
+                const fetchUrl = `${workerUrl}/api/search?term=${encodedSearchTerm}`;
 
-                identifyTopProduct() {
-                    if (!this.products || this.products.length === 0) return;
-                    
-                    let sortedProducts = [...this.products].sort((a, b) => {
-                        const salesA = this.getBadgeValue(a, 'BoughtXTimesInMonth', 'orderItemCount') || 0;
-                        const salesB = this.getBadgeValue(b, 'BoughtXTimesInMonth', 'orderItemCount') || 0;
-                        return salesB - salesA;
+                fetch(fetchUrl)
+                    .then(response => {
+                         if (!response.ok) {
+                            return response.json().then(err => { throw new Error(err.error || `Network response error (Status: ${response.status})`) });
+                         }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.products && data.products.length === 0) {
+                            this.error = "No products found for this search term. Try something broader.";
+                        } else {
+                            // The worker has done all the analysis. We just assign the results.
+                            this.products = data.products;
+                            this.analysis = data.analysis;
+                            this.topProduct = data.topProduct;
+                            // Now that we have the data, we can trigger the AI blueprint.
+                            this.getAiProductBlueprint();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('API call failed:', error);
+                        this.error = `API call failed: ${error.message}. Check your Backend URL and the browser console for details.`;
+                    })
+                    .finally(() => {
+                        this.loading = false;
                     });
+            },
+            
+            // NOTE: processData(), analyzeKeywords(), analyzeStores(), and identifyTopProduct() have been removed
+            // because their logic now lives in the Cloudflare Worker.
 
-                    this.topProduct = sortedProducts[0];
-                },
+            // This helper function is still needed for displaying product data in the grid.
+            getBadgeValue(product, badgeType, valueKey) {
+                if (!product || !product.badges || !Array.isArray(product.badges)) return null;
+                const badge = product.badges.find(b => b.type === badgeType);
+                return badge ? badge[valueKey] : null;
+            },
 
-                async getAiProductBlueprint() {
-                    if (!this.topProduct) return;
-                    if (!this.geminiApiKey) {
-                        this.aiBlueprint.winningIdea = "Please enter your Gemini API key above to use this feature.";
-                        return;
-                    }
-                    this.loadingBlueprint = true;
-                    
-                    const topProductData = {
-                        title: this.topProduct.titleSeo,
-                        description: this.topProduct.description,
-                        keywords: this.topProduct.keywords.split('+').join(', ')
+            // The AI functions remain unchanged as they call a different API.
+            async getAiProductBlueprint() {
+                if (!this.topProduct) return;
+                if (!this.geminiApiKey) {
+                    this.aiBlueprint.winningIdea = "Please enter your Gemini API key above to use this feature.";
+                    return;
+                }
+                this.loadingBlueprint = true;
+                
+                const topProductData = {
+                    title: this.topProduct.titleSeo,
+                    description: this.topProduct.description,
+                    keywords: this.topProduct.keywords.split('+').join(', ')
+                };
+                
+                const systemPrompt = "You are a Zazzle product strategy expert. Your goal is to provide a concise, actionable 'Product Blueprint' for a seller. Analyze the top product data for a niche and generate a winning product idea and an SEO-friendly product description. The response must be a JSON object with two keys: 'winningIdea' and 'productDescription'.";
+                const userQuery = `The top-selling product in the "${this.searchTerm}" niche is: ${JSON.stringify(topProductData, null, 2)}. Based on this, provide a new 'winningIdea' and a 'productDescription' for a similar but unique product.`;
+                
+                try {
+                    const apiKey = this.geminiApiKey;
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                    const payload = {
+                        contents: [{ parts: [{ text: userQuery }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "OBJECT",
+                                properties: {
+                                    "winningIdea": { "type": "STRING" },
+                                    "productDescription": { "type": "STRING" }
+                                }
+                            }
+                        }
                     };
-                    
-                    const systemPrompt = "You are a Zazzle product strategy expert. Your goal is to provide a concise, actionable 'Product Blueprint' for a seller. Analyze the top product data for a niche and generate a winning product idea and an SEO-friendly product description. The response must be a JSON object with two keys: 'winningIdea' and 'productDescription'.";
-                    const userQuery = `The top-selling product in the "${this.searchTerm}" niche is: ${JSON.stringify(topProductData, null, 2)}. Based on this, provide a new 'winningIdea' and a 'productDescription' for a similar but unique product.`;
-                    
-                    try {
-                        const apiKey = this.geminiApiKey;
-                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-                        const payload = {
-                            contents: [{ parts: [{ text: userQuery }] }],
-                            systemInstruction: { parts: [{ text: systemPrompt }] },
-                            generationConfig: {
-                                responseMimeType: "application/json",
-                                responseSchema: {
-                                    type: "OBJECT",
-                                    properties: {
-                                        "winningIdea": { "type": "STRING" },
-                                        "productDescription": { "type": "STRING" }
-                                    }
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.status === 401) throw new Error("Unauthorized (401). Please check if your Gemini API key is correct and has the necessary permissions.");
+                    if (!response.ok) throw new Error(`Gemini API request failed with status ${response.status}`);
+                    const result = await response.json();
+                    const blueprintText = result.candidates[0].content.parts[0].text;
+                    this.aiBlueprint = JSON.parse(blueprintText);
+
+                } catch(e) {
+                    console.error("AI Blueprint generation failed:", e);
+                    this.aiBlueprint.winningIdea = `Could not generate AI blueprint: ${e.message}`;
+                } finally {
+                    this.loadingBlueprint = false;
+                }
+            },
+
+            async getAiSuggestions() {
+                if (!this.geminiApiKey) {
+                    this.aiSuggestions.titles = ["Please enter your Gemini API key to use this feature."];
+                    return;
+                }
+                this.loadingSuggestions = true;
+                this.aiSuggestions = { titles: [], keywords: [] };
+                const topKeywords = this.analysis.keywords.slice(0, 30).map(kw => kw.term).join(', ');
+
+                const systemPrompt = "You are an SEO expert specializing in the Zazzle marketplace. Your goal is to generate compelling, keyword-rich product titles and a diverse list of long-tail keywords that will help a seller's product rank higher in search.";
+                const userQuery = `Based on this list of top-performing keywords for the niche '${this.searchTerm}', please generate 5 unique product titles and 20 related long-tail keywords.\n\nKeywords: ${topKeywords}`;
+                
+                try {
+                    const apiKey = this.geminiApiKey;
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                    const payload = {
+                        contents: [{ parts: [{ text: userQuery }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "OBJECT",
+                                properties: {
+                                    "titles": { "type": "ARRAY", "items": { "type": "STRING" }},
+                                    "keywords": { "type": "ARRAY", "items": { "type": "STRING" }}
                                 }
                             }
-                        };
-                        const response = await fetch(apiUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                        });
-                        if (response.status === 401) throw new Error("Unauthorized (401). Please check if your Gemini API key is correct and has the necessary permissions.");
-                        if (!response.ok) throw new Error(`Gemini API request failed with status ${response.status}`);
-                        const result = await response.json();
-                        const blueprintText = result.candidates[0].content.parts[0].text;
-                        this.aiBlueprint = JSON.parse(blueprintText);
-
-                    } catch(e) {
-                        console.error("AI Blueprint generation failed:", e);
-                        this.aiBlueprint.winningIdea = `Could not generate AI blueprint: ${e.message}`;
-                    } finally {
-                        this.loadingBlueprint = false;
-                    }
-                },
-
-                async getAiSuggestions() {
-                    if (!this.geminiApiKey) {
-                        this.aiSuggestions.titles = ["Please enter your Gemini API key to use this feature."];
-                        return;
-                    }
-                    this.loadingSuggestions = true;
-                    this.aiSuggestions = { titles: [], keywords: [] };
-                    const topKeywords = this.analysis.keywords.slice(0, 30).map(kw => kw.term).join(', ');
-
-                    const systemPrompt = "You are an SEO expert specializing in the Zazzle marketplace. Your goal is to generate compelling, keyword-rich product titles and a diverse list of long-tail keywords that will help a seller's product rank higher in search.";
-                    const userQuery = `Based on this list of top-performing keywords for the niche '${this.searchTerm}', please generate 5 unique product titles and 20 related long-tail keywords.\n\nKeywords: ${topKeywords}`;
-                    
-                    try {
-                        const apiKey = this.geminiApiKey;
-                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-                        const payload = {
-                            contents: [{ parts: [{ text: userQuery }] }],
-                            systemInstruction: { parts: [{ text: systemPrompt }] },
-                            generationConfig: {
-                                responseMimeType: "application/json",
-                                responseSchema: {
-                                    type: "OBJECT",
-                                    properties: {
-                                        "titles": { "type": "ARRAY", "items": { "type": "STRING" }},
-                                        "keywords": { "type": "ARRAY", "items": { "type": "STRING" }}
-                                    }
-                                }
-                            }
-                        };
+                        }
+                    };
 
                         const response = await fetch(apiUrl, {
                             method: 'POST',
@@ -231,56 +227,15 @@
                         const suggestionsText = result.candidates[0].content.parts[0].text;
                         this.aiSuggestions = JSON.parse(suggestionsText);
 
-                    } catch(e) {
-                        console.error("AI Suggestions failed:", e);
-                        this.aiSuggestions.titles = [`Error generating suggestions: ${e.message}`];
-                    } finally {
-                        this.loadingSuggestions = false;
-                    }
-                },
-
-                getBadgeValue(product, badgeType, valueKey) {
-                    if (!product || !product.badges || !Array.isArray(product.badges)) return null;
-                    const badge = product.badges.find(b => b.type === badgeType);
-                    return badge ? badge[valueKey] : null;
-                },
-
-                analyzeKeywords() {
-                    const keywordCounts = {};
-                    this.products.forEach(product => {
-                        if (product.keywords) {
-                            const keywords = product.keywords.split('+');
-                            keywords.forEach(kw => {
-                                const term = kw.trim();
-                                if (term) {
-                                    keywordCounts[term] = (keywordCounts[term] || 0) + 1;
-                                }
-                            });
-                        }
-                    });
-                    this.analysis.keywords = Object.entries(keywordCounts)
-                        .map(([term, count]) => ({ term, count }))
-                        .sort((a, b) => b.count - a.count);
-                },
-
-                analyzeStores() {
-                    const storeData = {};
-                    this.products.forEach(product => {
-                        const storeName = product.storeName || 'Unknown Store';
-                        if (!storeData[storeName]) {
-                            storeData[storeName] = { name: storeName, productCount: 0, totalSales: 0, totalPrice: 0, };
-                        }
-                        storeData[storeName].productCount++;
-                        storeData[storeName].totalPrice += product.price || 0;
-                        const sales = this.getBadgeValue(product, 'BoughtXTimesInMonth', 'orderItemCount') || 0;
-                        storeData[storeName].totalSales += sales;
-                    });
-                    this.analysis.stores = Object.values(storeData)
-                        .map(store => ({ ...store, averagePrice: store.productCount > 0 ? store.totalPrice / store.productCount : 0, }))
-                        .sort((a, b) => b.totalSales - a.totalSales);
+                } catch(e) {
+                    console.error("AI Suggestions failed:", e);
+                    this.aiSuggestions.titles = [`Error generating suggestions: ${e.message}`];
+                } finally {
+                    this.loadingSuggestions = false;
                 }
             }
         }
+    }
     </script>
 </head>
 <body class="text-gray-200">
@@ -312,9 +267,9 @@
                 </div>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <div>
-                    <label for="cors-proxy-url" class="block text-sm font-medium text-gray-300 mb-1">Your CORS Proxy URL</label>
-                    <input type="text" id="cors-proxy-url" x-model="corsProxyUrl" @input="localStorage.setItem('zazzleToolCorsProxyUrl', corsProxyUrl)" placeholder="https://your-worker.your-domain.workers.dev" class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                <div>
+                    <label for="backend-url" class="block text-sm font-medium text-gray-300 mb-1">Your Tool Backend URL</label>
+                    <input type="text" id="backend-url" x-model="backendUrl" @input="localStorage.setItem('zazzleToolBackendUrl', backendUrl)" placeholder="https://your-worker.your-domain.workers.dev" class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                     <p class="text-xs text-gray-500 mt-1">Required for live Zazzle data. Saved in your browser.</p>
                 </div>
                  <div>
