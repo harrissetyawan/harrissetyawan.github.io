@@ -89,7 +89,7 @@
                         proxyUrl = proxyUrl.slice(0, -1);
                     }
                     // Construct the URL with the target as a query string, as required by the Cloudflare worker.
-                    const fetchUrl = proxyUrl + '?' + zazzleApiUrl;
+                    const fetchUrl = `${proxyUrl}/?x-url=${encodeURIComponent(zazzleApiUrl)}`;
 
                     fetch(fetchUrl)
                         .then(response => {
