@@ -47,31 +47,34 @@
             error: null,
             products: [],
             topProduct: null,
-            // ** NEW: Add productTypes to the analysis object **
             view: 'products', // 'products', 'keywords', 'stores', 'product_types', 'ai_blueprint'
             analysis: {
                 keywords: [],
                 stores: [],
                 productTypes: [],
             },
-            // ** NEW: Add a market object for saturation data **
             market: {
                 saturation: 0,
             },
-            aiBlueprint: { /* ... same as before ... */ },
-            aiSuggestions: { /* ... same as before ... */ },
+            aiBlueprint: {
+                winningIdea: '',
+                productDescription: '',
+            },
+            aiSuggestions: {
+                titles: [],
+                keywords: []
+            },
             loadingBlueprint: false,
             loadingSuggestions: false,
 
             search() {
-                if (!this.searchTerm.trim()) { /* ... same as before ... */ }
-                if (!this.backendUrl.trim()) { /* ... same as before ... */ }
+                if (!this.searchTerm.trim()) { this.error = "Please enter a search keyword or niche."; return; }
+                if (!this.backendUrl.trim()) { this.error = "Please enter your tool's Backend URL."; return; }
                 this.loading = true;
                 this.initialLoad = false;
                 this.error = null;
                 this.products = [];
                 this.topProduct = null;
-                // ** NEW: Reset new data on search **
                 this.analysis = { keywords: [], stores: [], productTypes: [] };
                 this.market = { saturation: 0 };
                 this.aiBlueprint = { winningIdea: '', productDescription: '' };
@@ -96,7 +99,6 @@
                         if (data.products && data.products.length === 0) {
                             this.error = "No products found for this search term. Try something broader.";
                         } else {
-                            // ** NEW: Assign all the new data from the backend **
                             this.products = data.products;
                             this.analysis = data.analysis;
                             this.topProduct = data.topProduct;
@@ -104,13 +106,120 @@
                             this.getAiProductBlueprint();
                         }
                     })
-                    .catch(error => { /* ... same as before ... */ })
+                    .catch(error => {
+                        console.error('API call failed:', error);
+                        this.error = `API call failed: ${error.message}. Check your Backend URL and the browser console for details.`;
+                     })
                     .finally(() => { this.loading = false; });
             },
             
-            getBadgeValue(product, badgeType, valueKey) { /* ... same as before ... */ },
-            async getAiProductBlueprint() { /* ... same as before ... */ },
-            async getAiSuggestions() { /* ... same as before ... */ }
+            // ** THIS IS THE MISSING FUNCTION THAT HAS BEEN ADDED BACK **
+            getBadgeValue(product, badgeType, valueKey) {
+                if (!product || !product.badges || !Array.isArray(product.badges)) return null;
+                const badge = product.badges.find(b => b.type === badgeType);
+                return badge ? badge[valueKey] : null;
+            },
+
+            async getAiProductBlueprint() {
+                if (!this.topProduct) return;
+                if (!this.geminiApiKey) {
+                    this.aiBlueprint.winningIdea = "Please enter your Gemini API key above to use this feature.";
+                    return;
+                }
+                this.loadingBlueprint = true;
+                
+                const topProductData = {
+                    title: this.topProduct.titleSeo,
+                    description: this.topProduct.description,
+                    keywords: this.topProduct.keywords.split('+').join(', ')
+                };
+                
+                const systemPrompt = "You are a Zazzle product strategy expert. Your goal is to provide a concise, actionable 'Product Blueprint' for a seller. Analyze the top product data for a niche and generate a winning product idea and an SEO-friendly product description. The response must be a JSON object with two keys: 'winningIdea' and 'productDescription'.";
+                const userQuery = `The top-selling product in the "${this.searchTerm}" niche is: ${JSON.stringify(topProductData, null, 2)}. Based on this, provide a new 'winningIdea' and a 'productDescription' for a similar but unique product.`;
+                
+                try {
+                    const apiKey = this.geminiApiKey;
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                    const payload = {
+                        contents: [{ parts: [{ text: userQuery }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "OBJECT",
+                                properties: {
+                                    "winningIdea": { "type": "STRING" },
+                                    "productDescription": { "type": "STRING" }
+                                }
+                            }
+                        }
+                    };
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.status === 401) throw new Error("Unauthorized (401). Please check if your Gemini API key is correct and has the necessary permissions.");
+                    if (!response.ok) throw new Error(`Gemini API request failed with status ${response.status}`);
+                    const result = await response.json();
+                    const blueprintText = result.candidates[0].content.parts[0].text;
+                    this.aiBlueprint = JSON.parse(blueprintText);
+
+                } catch(e) {
+                    console.error("AI Blueprint generation failed:", e);
+                    this.aiBlueprint.winningIdea = `Could not generate AI blueprint: ${e.message}`;
+                } finally {
+                    this.loadingBlueprint = false;
+                }
+            },
+
+            async getAiSuggestions() {
+                if (!this.geminiApiKey) {
+                    this.aiSuggestions.titles = ["Please enter your Gemini API key to use this feature."];
+                    return;
+                }
+                this.loadingSuggestions = true;
+                this.aiSuggestions = { titles: [], keywords: [] };
+                const topKeywords = this.analysis.keywords.slice(0, 30).map(kw => kw.term).join(', ');
+
+                const systemPrompt = "You are an SEO expert specializing in the Zazzle marketplace. Your goal is to generate compelling, keyword-rich product titles and a diverse list of long-tail keywords that will help a seller's product rank higher in search.";
+                const userQuery = `Based on this list of top-performing keywords for the niche '${this.searchTerm}', please generate 5 unique product titles and 20 related long-tail keywords.\n\nKeywords: ${topKeywords}`;
+                
+                try {
+                    const apiKey = this.geminiApiKey;
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                    const payload = {
+                        contents: [{ parts: [{ text: userQuery }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "OBJECT",
+                                properties: {
+                                    "titles": { "type": "ARRAY", "items": { "type": "STRING" }},
+                                    "keywords": { "type": "ARRAY", "items": { "type": "STRING" }}
+                                }
+                            }
+                        }
+                    };
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.status === 401) throw new Error("Unauthorized (401). Please check if your Gemini API key is correct and has the necessary permissions.");
+                    if (!response.ok) throw new Error(`Gemini API request failed with status ${response.status}`);
+                    const result = await response.json();
+                    const suggestionsText = result.candidates[0].content.parts[0].text;
+                    this.aiSuggestions = JSON.parse(suggestionsText);
+
+                } catch(e) {
+                    console.error("AI Suggestions failed:", e);
+                    this.aiSuggestions.titles = [`Error generating suggestions: ${e.message}`];
+                } finally {
+                    this.loadingSuggestions = false;
+                }
+            }
         }
     }
 </script>
