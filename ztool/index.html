@@ -5,27 +5,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Zazzle Seller Insights Tool</title>
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Alpine.js CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    <!-- Custom Google Font -->
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Custom styling for the application */
         body {
             font-family: 'Inter', sans-serif;
             background-color: #111827;
-            /* Dark gray background */
         }
 
         [x-cloak] {
             display: none !important;
         }
 
-        /* Custom scrollbar for better aesthetics */
         ::-webkit-scrollbar {
             width: 8px;
         }
@@ -64,29 +58,23 @@
                     saturation: 0,
                 },
 
-                // State for sorting
-                sortBy: 'sales', // 'sales', 'views', 'conversionRate'
+                sortBy: 'sales',
 
-                // Computed property to automatically sort products
                 get sortedProducts() {
+                    if (!this.products) return [];
                     return [...this.products].sort((a, b) => {
-                        return b.stats[this.sortBy] - a.stats[this.sortBy];
+                        const statA = a.stats ? a.stats[this.sortBy] : 0;
+                        const statB = b.stats ? b.stats[this.sortBy] : 0;
+                        return statB - statA;
                     });
                 },
 
-                // Method to change the sort order
                 setSort(key) {
                     this.sortBy = key;
                 },
 
-                aiBlueprint: {
-                    winningIdea: '',
-                    productDescription: '',
-                },
-                aiSuggestions: {
-                    titles: [],
-                    keywords: []
-                },
+                aiBlueprint: { winningIdea: '', productDescription: '' },
+                aiSuggestions: { titles: [], keywords: [] },
                 loadingBlueprint: false,
                 loadingSuggestions: false,
 
@@ -103,7 +91,7 @@
                     this.aiBlueprint = { winningIdea: '', productDescription: '' };
                     this.aiSuggestions = { titles: [], keywords: [] };
                     this.view = 'products';
-                    this.sortBy = 'sales'; // Reset sort on new search
+                    this.sortBy = 'sales';
 
                     const encodedSearchTerm = encodeURIComponent(this.searchTerm.trim());
                     let workerUrl = this.backendUrl.trim();
@@ -145,42 +133,49 @@
                     }
                     this.loadingBlueprint = true;
 
-                    const topProductData = {
-                        title: this.topProduct.titleSeo,
-                        description: this.topProduct.description,
-                        keywords: this.topProduct.keywords.split('+').join(', ')
+                    const marketData = {
+                        topKeywords: this.analysis.keywords.slice(0, 10).map(kw => kw.term),
+                        dominantProductTypes: this.analysis.productTypes.slice(0, 5).map(pt => pt.type),
+                        topPerformingProduct: {
+                            title: this.topProduct.titleSeo,
+                            description: this.topProduct.description,
+                            keywords: this.topProduct.keywords.split('+')
+                        }
                     };
 
-                    const systemPrompt = "You are a Zazzle product strategy expert. Your goal is to provide a concise, actionable 'Product Blueprint' for a seller. Analyze the top product data for a niche and generate a winning product idea and an SEO-friendly product description. The response must be a JSON object with two keys: 'winningIdea' and 'productDescription'.";
-                    const userQuery = `The top-selling product in the "${this.searchTerm}" niche is: ${JSON.stringify(topProductData, null, 2)}. Based on this, provide a new 'winningIdea' and a 'productDescription' for a similar but unique product.`;
+                    const systemPrompt = "You are a Zazzle product strategy expert. Your goal is to provide a concise, actionable 'Product Blueprint' for a seller. Analyze the provided market data for a niche, identify a strategic opportunity, and generate a winning product idea and an SEO-friendly product description. The response must be a JSON object with two keys: 'winningIdea' and 'productDescription'.";
+                    const userQuery = `Analyze the following market data for the "${this.searchTerm}" niche and generate your blueprint:\n${JSON.stringify(marketData, null, 2)}`;
 
                     try {
                         const apiKey = this.geminiApiKey;
                         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+
                         const payload = {
                             contents: [{ parts: [{ text: userQuery }] }],
                             generationConfig: {
                                 responseMimeType: "application/json",
+                                responseSchema: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        "winningIdea": { "type": "STRING" },
+                                        "productDescription": { "type": "STRING" }
+                                    },
+                                    required: ["winningIdea", "productDescription"]
+                                }
                             }
                         };
+
                         const response = await fetch(apiUrl, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload)
                         });
-
                         if (!response.ok) throw new Error(`Gemini API request failed with status ${response.status}`);
 
                         const result = await response.json();
                         const rawText = result.candidates[0].content.parts[0].text;
 
-                        const startIndex = rawText.indexOf('{');
-                        const endIndex = rawText.lastIndexOf('}');
-                        if (startIndex === -1 || endIndex === -1) {
-                            throw new Error("Could not find a valid JSON object in the AI's response.");
-                        }
-                        const jsonString = rawText.substring(startIndex, endIndex + 1);
-                        this.aiBlueprint = JSON.parse(jsonString);
+                        this.aiBlueprint = JSON.parse(rawText);
 
                     } catch (e) {
                         console.error("AI Blueprint generation failed:", e);
@@ -198,17 +193,25 @@
                     this.loadingSuggestions = true;
                     this.aiSuggestions = { titles: [], keywords: [] };
                     const topKeywords = this.analysis.keywords.slice(0, 30).map(kw => kw.term).join(', ');
-
                     const systemPrompt = "You are an SEO expert specializing in the Zazzle marketplace. Your goal is to generate compelling, keyword-rich product titles and a diverse list of long-tail keywords that will help a seller's product rank higher in search.";
                     const userQuery = `Based on this list of top-performing keywords for the niche '${this.searchTerm}', please generate 5 unique product titles and 20 related long-tail keywords.\n\nKeywords: ${topKeywords}`;
 
                     try {
                         const apiKey = this.geminiApiKey;
                         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+
                         const payload = {
                             contents: [{ parts: [{ text: userQuery }] }],
                             generationConfig: {
                                 responseMimeType: "application/json",
+                                responseSchema: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        "productTitles": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                        "longTailKeywords": { "type": "ARRAY", "items": { "type": "STRING" } }
+                                    },
+                                    required: ["productTitles", "longTailKeywords"]
+                                }
                             }
                         };
 
@@ -217,19 +220,16 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload)
                         });
-
                         if (!response.ok) throw new Error(`Gemini API request failed with status ${response.status}`);
 
                         const result = await response.json();
                         const rawText = result.candidates[0].content.parts[0].text;
 
-                        const startIndex = rawText.indexOf('{');
-                        const endIndex = rawText.lastIndexOf('}');
-                        if (startIndex === -1 || endIndex === -1) {
-                            throw new Error("Could not find a valid JSON object in the AI's response.");
-                        }
-                        const jsonString = rawText.substring(startIndex, endIndex + 1);
-                        this.aiSuggestions = JSON.parse(jsonString);
+                        const parsedResponse = JSON.parse(rawText);
+                        this.aiSuggestions = {
+                            titles: parsedResponse.productTitles || [],
+                            keywords: parsedResponse.longTailKeywords || []
+                        };
 
                     } catch (e) {
                         console.error("AI Suggestions failed:", e);
@@ -252,31 +252,28 @@
             <p class="text-lg text-gray-400">Unlock Market Trends and Optimize Your Listings</p>
         </header>
 
-        <!-- Search and Controls Section -->
         <div class="bg-gray-800 p-6 rounded-2xl shadow-lg mb-8 space-y-4">
-            <div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                    <div class="col-span-1 md:col-span-2">
-                        <label for="search-term" class="block text-sm font-medium text-gray-300 mb-1">Search Keyword /
-                            Niche</label>
-                        <input type="text" id="search-term" x-model="searchTerm" @keydown.enter="search()"
-                            placeholder="e.g., boho wedding invitation, gifts for nurses"
-                            class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                    </div>
-                    <div>
-                        <button @click="search()" :disabled="loading"
-                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center">
-                            <svg x-show="loading" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                                xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
-                                    stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor"
-                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                                </path>
-                            </svg>
-                            <span x-text="loading ? 'Analyzing...' : 'Analyze Niche'"></span>
-                        </button>
-                    </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                <div class="col-span-1 md:col-span-2">
+                    <label for="search-term" class="block text-sm font-medium text-gray-300 mb-1">Search Keyword /
+                        Niche</label>
+                    <input type="text" id="search-term" x-model="searchTerm" @keydown.enter="search()"
+                        placeholder="e.g., boho wedding invitation, gifts for nurses"
+                        class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                </div>
+                <div>
+                    <button @click="search()" :disabled="loading"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center">
+                        <svg x-show="loading" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
+                            xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
+                            </circle>
+                            <path class="opacity-75" fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                            </path>
+                        </svg>
+                        <span x-text="loading ? 'Analyzing...' : 'Analyze Niche'"></span>
+                    </button>
                 </div>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -285,7 +282,7 @@
                         URL</label>
                     <input type="text" id="backend-url" x-model="backendUrl"
                         @input="localStorage.setItem('zazzleToolBackendUrl', backendUrl)"
-                        placeholder="https://your-worker.your-domain.workers.dev"
+                        placeholder="https://your-project.vercel.app"
                         class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                     <p class="text-xs text-gray-500 mt-1">Required for live Zazzle data. Saved in your browser.</p>
                 </div>
@@ -300,7 +297,7 @@
                 </div>
             </div>
         </div>
-        <!-- Market Analysis -->
+
         <div x-show="market.saturation > 0" class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center mb-8">
             <div class="bg-gray-800 p-4 rounded-xl">
                 <div class="text-sm font-medium text-gray-400">Niche Saturation</div>
@@ -309,7 +306,8 @@
             </div>
             <div class="bg-gray-800 p-4 rounded-xl">
                 <div class="text-sm font-medium text-gray-400">Top Product Sales</div>
-                <div class="text-2xl font-bold text-green-400" x-text="topProduct ? topProduct.stats.sales : 'N/A'"></div>
+                <div class="text-2xl font-bold text-green-400" x-text="topProduct ? topProduct.stats.sales : 'N/A'">
+                </div>
                 <div class="text-xs text-gray-500">Est. Sales/Mo for #1 Product</div>
             </div>
             <div class="bg-gray-800 p-4 rounded-xl">
@@ -321,49 +319,40 @@
             </div>
         </div>
 
-        <!-- Loading, Error and Results Section -->
         <div x-show="!initialLoad">
-            <!-- Error Message -->
             <template x-if="error">
                 <div class="bg-red-800/80 border border-red-600 text-white p-4 rounded-lg shadow-lg mb-6"
                     x-text="error"></div>
             </template>
 
-            <!-- Analysis Tabs -->
             <div x-show="products.length > 0" class="mb-6">
                 <div class="border-b border-gray-700">
                     <nav class="-mb-px flex space-x-6 overflow-x-auto" aria-label="Tabs">
                         <button @click="view = 'products'"
                             :class="{'border-blue-500 text-blue-400': view === 'products', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'products'}"
-                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
-                            Top Products
-                        </button>
-                        <button @click="view = 'keywords'"
-                            :class="{'border-blue-500 text-blue-400': view === 'keywords', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'keywords'}"
-                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
-                            Keyword Analysis
-                        </button>
-                        <button @click="view = 'stores'"
-                            :class="{'border-blue-500 text-blue-400': view === 'stores', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'stores'}"
-                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
-                            Top Stores
-                        </button>
-                        <button @click="view = 'ai_blueprint'"
-                            :class="{'border-blue-500 text-blue-400': view === 'ai_blueprint', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'ai_blueprint'}"
-                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
-                            AI Product Blueprint ✨
-                        </button>
+                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">Top
+                            Products</button>
                         <button @click="view = 'product_types'"
                             :class="{'border-blue-500 text-blue-400': view === 'product_types', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'product_types'}"
-                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
-                            Product Types
-                        </button>
+                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">Product
+                            Types</button>
+                        <button @click="view = 'keywords'"
+                            :class="{'border-blue-500 text-blue-400': view === 'keywords', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'keywords'}"
+                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">Keyword
+                            Analysis</button>
+                        <button @click="view = 'stores'"
+                            :class="{'border-blue-500 text-blue-400': view === 'stores', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'stores'}"
+                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">Top
+                            Stores</button>
+                        <button @click="view = 'ai_blueprint'"
+                            :class="{'border-blue-500 text-blue-400': view === 'ai_blueprint', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'ai_blueprint'}"
+                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">AI Product
+                            Blueprint ✨</button>
                     </nav>
                 </div>
             </div>
 
-            <!-- Product Grid -->
-            <div x-show="products.length > 0" class="mb-4 flex items-center space-x-2">
+            <div x-show="products.length > 0 && view === 'products'" class="mb-4 flex items-center space-x-2">
                 <span class="text-sm font-medium text-gray-400">Sort by:</span>
                 <button @click="setSort('sales')"
                     :class="sortBy === 'sales' ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'"
@@ -375,9 +364,10 @@
                     :class="sortBy === 'conversionRate' ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'"
                     class="px-3 py-1 text-sm font-semibold rounded-full transition">Highest Converting</button>
             </div>
+
             <div x-show="view === 'products'" x-transition>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    <template x-for="(product, index) in sortedProducts" :key="product.id">
+                    <template x-for="product in sortedProducts" :key="product.id">
                         <div
                             class="bg-gray-800 rounded-2xl shadow-lg overflow-hidden flex flex-col transition-transform duration-300 hover:transform hover:-translate-y-1">
                             <img :src="product.imageUrl" :alt="product.titleSeo" class="w-full h-48 object-cover">
@@ -386,10 +376,9 @@
                                     x-text="product.titleSeo"></h3>
                                 <p class="text-sm text-gray-400 mb-3">by <span class="font-medium text-gray-300"
                                         x-text="product.storeName"></span></p>
-
                                 <div class="grid grid-cols-2 gap-y-3 gap-x-2 text-sm mb-4">
-                                    <div class="flex items-center space-x-2">
-                                        <svg class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <div class="flex items-center space-x-2"><svg class="h-5 w-5 text-green-400"
+                                            fill="currentColor" viewBox="0 0 20 20">
                                             <path
                                                 d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" />
                                         </svg>
@@ -398,8 +387,8 @@
                                             <div class="text-xs text-gray-400">Sales/Mo</div>
                                         </div>
                                     </div>
-                                    <div class="flex items-center space-x-2">
-                                        <svg class="h-5 w-5 text-purple-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <div class="flex items-center space-x-2"><svg class="h-5 w-5 text-purple-400"
+                                            fill="currentColor" viewBox="0 0 20 20">
                                             <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
                                             <path fill-rule="evenodd"
                                                 d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.022 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z"
@@ -411,8 +400,8 @@
                                             <div class="text-xs text-gray-400">Views/Mo</div>
                                         </div>
                                     </div>
-                                    <div class="flex items-center space-x-2">
-                                        <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <div class="flex items-center space-x-2"><svg class="h-5 w-5 text-blue-400"
+                                            fill="currentColor" viewBox="0 0 20 20">
                                             <path fill-rule="evenodd"
                                                 d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z"
                                                 clip-rule="evenodd" />
@@ -422,8 +411,8 @@
                                             <div class="text-xs text-gray-400">In Carts</div>
                                         </div>
                                     </div>
-                                    <div class="flex items-center space-x-2">
-                                        <svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <div class="flex items-center space-x-2"><svg class="h-5 w-5 text-yellow-400"
+                                            fill="currentColor" viewBox="0 0 20 20">
                                             <path fill-rule="evenodd"
                                                 d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
                                                 clip-rule="evenodd" />
@@ -435,18 +424,17 @@
                                         </div>
                                     </div>
                                 </div>
-
                                 <div class="mt-auto pt-3 border-t border-gray-700">
                                     <a :href="product.linkUrl" target="_blank"
-                                        class="text-blue-400 hover:text-blue-300 text-sm font-semibold w-full block text-center">
-                                        View on Zazzle &rarr;
-                                    </a>
+                                        class="text-blue-400 hover:text-blue-300 text-sm font-semibold w-full block text-center">View
+                                        on Zazzle &rarr;</a>
                                 </div>
                             </div>
                         </div>
                     </template>
                 </div>
             </div>
+
             <div x-show="view === 'product_types'" x-transition>
                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
                     <h2 class="text-2xl font-bold text-white mb-4">Product Type Analysis</h2>
@@ -460,34 +448,30 @@
                                     <th scope="col" class="px-6 py-3 text-right">Count in Results</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <template x-for="pt in analysis.productTypes" :key="pt.type">
+                            <tbody><template x-for="pt in analysis.productTypes" :key="pt.type">
                                     <tr class="border-b border-gray-700 hover:bg-gray-700/50">
                                         <td class="px-6 py-4 font-bold text-white"
                                             x-text="pt.type.replace('zazzle_', '')"></td>
                                         <td class="px-6 py-4 text-right font-semibold" x-text="pt.count"></td>
                                     </tr>
-                                </template>
-                            </tbody>
+                                </template></tbody>
                         </table>
                     </div>
                 </div>
             </div>
-            <!-- Keyword Analysis -->
+
             <div x-show="view === 'keywords'" x-transition>
                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
                     <h2 class="text-2xl font-bold text-white mb-4">Top Keywords Analysis</h2>
                     <p class="text-gray-400 mb-6">These are the most frequently used keywords by the top-selling
                         products in this niche.</p>
-                    <div class="flex flex-wrap gap-3">
-                        <template x-for="keyword in analysis.keywords.slice(0, 50)" :key="keyword.term">
-                            <div class="bg-gray-700 rounded-full px-4 py-2 text-sm flex items-center space-x-2">
-                                <span class="font-medium text-white" x-text="keyword.term"></span>
-                                <span class="text-xs bg-blue-600 text-white rounded-full px-2 py-0.5"
-                                    x-text="keyword.count"></span>
-                            </div>
-                        </template>
-                    </div>
+                    <div class="flex flex-wrap gap-3"><template x-for="keyword in analysis.keywords.slice(0, 50)"
+                            :key="keyword.term">
+                            <div class="bg-gray-700 rounded-full px-4 py-2 text-sm flex items-center space-x-2"><span
+                                    class="font-medium text-white" x-text="keyword.term"></span><span
+                                    class="text-xs bg-blue-600 text-white rounded-full px-2 py-0.5"
+                                    x-text="keyword.count"></span></div>
+                        </template></div>
                     <div class="mt-8 pt-6 border-t border-gray-700">
                         <button @click="getAiSuggestions()" :disabled="loadingSuggestions"
                             class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-5 rounded-lg transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center">
@@ -504,28 +488,22 @@
                         <div x-show="aiSuggestions.titles.length > 0" class="mt-6 space-y-6">
                             <div>
                                 <h3 class="text-xl font-semibold text-white mb-3">AI-Generated Titles:</h3>
-                                <ul class="list-disc list-inside space-y-2 text-gray-300">
-                                    <template x-for="title in aiSuggestions.titles">
+                                <ul class="list-disc list-inside space-y-2 text-gray-300"><template
+                                        x-for="title in aiSuggestions.titles">
                                         <li x-text="title"></li>
-                                    </template>
-                                </ul>
+                                    </template></ul>
                             </div>
                             <div>
                                 <h3 class="text-xl font-semibold text-white mb-3">AI-Generated Keywords:</h3>
-                                <div class="flex flex-wrap gap-2">
-                                    <template x-for="kw in aiSuggestions.keywords">
-                                        <span
+                                <div class="flex flex-wrap gap-2"><template x-for="kw in aiSuggestions.keywords"><span
                                             class="bg-gray-700 text-gray-200 text-xs font-medium px-2.5 py-1 rounded-full"
-                                            x-text="kw"></span>
-                                    </template>
-                                </div>
+                                            x-text="kw"></span></template></div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Store Analysis -->
             <div x-show="view === 'stores'" x-transition>
                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
                     <h2 class="text-2xl font-bold text-white mb-4">Top Stores Analysis</h2>
@@ -542,8 +520,7 @@
                                     <th scope="col" class="px-6 py-3">Avg. Price</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <template x-for="(store, index) in analysis.stores" :key="store.name">
+                            <tbody><template x-for="(store, index) in analysis.stores" :key="store.name">
                                     <tr class="border-b border-gray-700 hover:bg-gray-700/50">
                                         <td class="px-6 py-4 font-medium" x-text="index + 1"></td>
                                         <td class="px-6 py-4 font-bold text-white" x-text="store.name"></td>
@@ -552,20 +529,18 @@
                                         <td class="px-6 py-4" x-text="store.productCount"></td>
                                         <td class="px-6 py-4" x-text="`$${store.averagePrice.toFixed(2)}`"></td>
                                     </tr>
-                                </template>
-                            </tbody>
+                                </template></tbody>
                         </table>
                     </div>
                 </div>
             </div>
 
-            <!-- AI Product Blueprint -->
             <div x-show="view === 'ai_blueprint'" x-transition>
                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
                     <h2 class="text-2xl font-bold text-white mb-4">✨ AI Product Blueprint for "<span
                             x-text="searchTerm"></span>"</h2>
-                    <div x-show="loadingBlueprint" class="text-center py-8">
-                        <svg class="animate-spin mx-auto h-8 w-8 text-white" xmlns="http://www.w3.org/2000/svg"
+                    <div x-show="loadingBlueprint" class="text-center py-8"><svg
+                            class="animate-spin mx-auto h-8 w-8 text-white" xmlns="http://www.w3.org/2000/svg"
                             fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
                             </circle>
@@ -573,12 +548,11 @@
                                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
                             </path>
                         </svg>
-                        <p class="mt-3 text-gray-400">Gemini is generating your product blueprint...</p>
+                        <p class="mt-3 text-gray-400">Gemini is analyzing the market...</p>
                     </div>
                     <div x-show="!loadingBlueprint && aiBlueprint.winningIdea">
-                        <!-- Top Product Section -->
                         <template x-if="topProduct">
-                            <div class="mb-8 p-4 border border-gray-700 rounded-lg">
+                            <div class="mb-8 p-4 border border-gray-700 rounded-lg bg-gray-900/50">
                                 <h3 class="text-xl font-semibold text-white mb-4">Top Product for Design Reference</h3>
                                 <div class="flex flex-col md:flex-row gap-6">
                                     <img :src="topProduct.imageUrl" :alt="topProduct.titleSeo"
@@ -590,27 +564,22 @@
                                         <div class="flex items-center space-x-6">
                                             <div class="text-center">
                                                 <div class="text-2xl font-bold text-green-400"
-                                                    x-text="getBadgeValue(topProduct, 'BoughtXTimesInMonth', 'orderItemCount') || 'N/A'">
-                                                </div>
+                                                    x-text="topProduct.stats.sales"></div>
                                                 <div class="text-sm text-gray-400">Sales/Month</div>
                                             </div>
                                             <div class="text-center">
                                                 <div class="text-2xl font-bold text-blue-400"
-                                                    x-text="getBadgeValue(topProduct, 'InXCarts', 'cartCount') || 'N/A'">
-                                                </div>
+                                                    x-text="topProduct.stats.carts"></div>
                                                 <div class="text-sm text-gray-400">In Carts</div>
                                             </div>
                                         </div>
                                         <a :href="topProduct.linkUrl" target="_blank"
-                                            class="inline-block mt-4 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg text-sm">
-                                            View Product &rarr;
-                                        </a>
+                                            class="inline-block mt-4 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg text-sm">View
+                                            Product &rarr;</a>
                                     </div>
                                 </div>
                             </div>
                         </template>
-
-                        <!-- AI Generated Content -->
                         <div class="space-y-6">
                             <div>
                                 <h3 class="text-xl font-semibold text-white mb-2">💡 Winning Product Idea</h3>
