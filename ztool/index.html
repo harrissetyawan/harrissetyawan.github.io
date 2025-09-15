@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,218 +17,231 @@
         /* Custom styling for the application */
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #111827; /* Dark gray background */
+            background-color: #111827;
+            /* Dark gray background */
         }
+
         [x-cloak] {
             display: none !important;
         }
+
         /* Custom scrollbar for better aesthetics */
         ::-webkit-scrollbar {
             width: 8px;
         }
+
         ::-webkit-scrollbar-track {
             background: #1f2937;
         }
+
         ::-webkit-scrollbar-thumb {
             background: #4b5563;
             border-radius: 4px;
         }
+
         ::-webkit-scrollbar-thumb:hover {
             background: #6b7280;
         }
     </style>
-<script>
-    function zazzleTool() {
-        return {
-            searchTerm: '',
-            geminiApiKey: localStorage.getItem('zazzleToolGeminiApiKey') || '',
-            backendUrl: localStorage.getItem('zazzleToolBackendUrl') || '',
-            loading: false,
-            initialLoad: true,
-            error: null,
-            products: [],
-            topProduct: null,
-            view: 'products', // 'products', 'keywords', 'stores', 'product_types', 'ai_blueprint'
-            analysis: {
-                keywords: [],
-                stores: [],
-                productTypes: [],
-            },
-            market: {
-                saturation: 0,
-            },
-            aiBlueprint: {
-                winningIdea: '',
-                productDescription: '',
-            },
-            aiSuggestions: {
-                titles: [],
-                keywords: []
-            },
-            loadingBlueprint: false,
-            loadingSuggestions: false,
+    <script>
+        function zazzleTool() {
+            return {
+                searchTerm: '',
+                geminiApiKey: localStorage.getItem('zazzleToolGeminiApiKey') || '',
+                backendUrl: localStorage.getItem('zazzleToolBackendUrl') || '',
+                loading: false,
+                initialLoad: true,
+                error: null,
+                products: [],
+                topProduct: null,
+                view: 'products',
+                analysis: {
+                    keywords: [],
+                    stores: [],
+                    productTypes: [],
+                },
+                market: {
+                    saturation: 0,
+                },
+                aiBlueprint: {
+                    winningIdea: '',
+                    productDescription: '',
+                },
+                aiSuggestions: {
+                    titles: [],
+                    keywords: []
+                },
+                loadingBlueprint: false,
+                loadingSuggestions: false,
 
-            search() {
-                if (!this.searchTerm.trim()) { this.error = "Please enter a search keyword or niche."; return; }
-                if (!this.backendUrl.trim()) { this.error = "Please enter your tool's Backend URL."; return; }
-                this.loading = true;
-                this.initialLoad = false;
-                this.error = null;
-                this.products = [];
-                this.topProduct = null;
-                this.analysis = { keywords: [], stores: [], productTypes: [] };
-                this.market = { saturation: 0 };
-                this.aiBlueprint = { winningIdea: '', productDescription: '' };
-                this.aiSuggestions = { titles: [], keywords: [] };
-                this.view = 'products';
+                search() {
+                    if (!this.searchTerm.trim()) { this.error = "Please enter a search keyword or niche."; return; }
+                    if (!this.backendUrl.trim()) { this.error = "Please enter your tool's Backend URL."; return; }
+                    this.loading = true;
+                    this.initialLoad = false;
+                    this.error = null;
+                    this.products = [];
+                    this.topProduct = null;
+                    this.analysis = { keywords: [], stores: [], productTypes: [] };
+                    this.market = { saturation: 0 };
+                    this.aiBlueprint = { winningIdea: '', productDescription: '' };
+                    this.aiSuggestions = { titles: [], keywords: [] };
+                    this.view = 'products';
 
-                const encodedSearchTerm = encodeURIComponent(this.searchTerm.trim());
-                let workerUrl = this.backendUrl.trim();
-                if (workerUrl.endsWith('/')) {
-                    workerUrl = workerUrl.slice(0, -1);
-                }
-                const fetchUrl = `${workerUrl}/api/search?term=${encodedSearchTerm}`;
+                    const encodedSearchTerm = encodeURIComponent(this.searchTerm.trim());
+                    let workerUrl = this.backendUrl.trim();
+                    if (workerUrl.endsWith('/')) {
+                        workerUrl = workerUrl.slice(0, -1);
+                    }
+                    const fetchUrl = `${workerUrl}/api/search?term=${encodedSearchTerm}`;
 
-                fetch(fetchUrl)
-                    .then(response => {
-                         if (!response.ok) {
-                            return response.json().then(err => { throw new Error(err.error || `Network response error (Status: ${response.status})`) });
-                         }
-                        return response.json();
-                    })
-                    .then(data => {
-                        if (data.products && data.products.length === 0) {
-                            this.error = "No products found for this search term. Try something broader.";
-                        } else {
-                            this.products = data.products;
-                            this.analysis = data.analysis;
-                            this.topProduct = data.topProduct;
-                            this.market = data.market;
-                            this.getAiProductBlueprint();
-                        }
-                    })
-                    .catch(error => {
-                        console.error('API call failed:', error);
-                        this.error = `API call failed: ${error.message}. Check your Backend URL and the browser console for details.`;
-                     })
-                    .finally(() => { this.loading = false; });
-            },
-            
-            // ** THIS IS THE MISSING FUNCTION THAT HAS BEEN ADDED BACK **
-            getBadgeValue(product, badgeType, valueKey) {
-                if (!product || !product.badges || !Array.isArray(product.badges)) return null;
-                const badge = product.badges.find(b => b.type === badgeType);
-                return badge ? badge[valueKey] : null;
-            },
-
-            async getAiProductBlueprint() {
-                if (!this.topProduct) return;
-                if (!this.geminiApiKey) {
-                    this.aiBlueprint.winningIdea = "Please enter your Gemini API key above to use this feature.";
-                    return;
-                }
-                this.loadingBlueprint = true;
-                
-                const topProductData = {
-                    title: this.topProduct.titleSeo,
-                    description: this.topProduct.description,
-                    keywords: this.topProduct.keywords.split('+').join(', ')
-                };
-                
-                const systemPrompt = "You are a Zazzle product strategy expert. Your goal is to provide a concise, actionable 'Product Blueprint' for a seller. Analyze the top product data for a niche and generate a winning product idea and an SEO-friendly product description. The response must be a JSON object with two keys: 'winningIdea' and 'productDescription'.";
-                const userQuery = `The top-selling product in the "${this.searchTerm}" niche is: ${JSON.stringify(topProductData, null, 2)}. Based on this, provide a new 'winningIdea' and a 'productDescription' for a similar but unique product.`;
-                
-                try {
-                    const apiKey = this.geminiApiKey;
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-                    const payload = {
-                        contents: [{ parts: [{ text: userQuery }] }],
-                        systemInstruction: { parts: [{ text: systemPrompt }] },
-                        generationConfig: {
-                            responseMimeType: "application/json",
-                            responseSchema: {
-                                type: "OBJECT",
-                                properties: {
-                                    "winningIdea": { "type": "STRING" },
-                                    "productDescription": { "type": "STRING" }
-                                }
+                    fetch(fetchUrl)
+                        .then(response => {
+                            if (!response.ok) {
+                                return response.json().then(err => { throw new Error(err.error || `Network response error (Status: ${response.status})`) });
                             }
-                        }
-                    };
-                    const response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    if (response.status === 401) throw new Error("Unauthorized (401). Please check if your Gemini API key is correct and has the necessary permissions.");
-                    if (!response.ok) throw new Error(`Gemini API request failed with status ${response.status}`);
-                    const result = await response.json();
-                    const blueprintText = result.candidates[0].content.parts[0].text;
-                    this.aiBlueprint = JSON.parse(blueprintText);
-
-                } catch(e) {
-                    console.error("AI Blueprint generation failed:", e);
-                    this.aiBlueprint.winningIdea = `Could not generate AI blueprint: ${e.message}`;
-                } finally {
-                    this.loadingBlueprint = false;
-                }
-            },
-
-            async getAiSuggestions() {
-                if (!this.geminiApiKey) {
-                    this.aiSuggestions.titles = ["Please enter your Gemini API key to use this feature."];
-                    return;
-                }
-                this.loadingSuggestions = true;
-                this.aiSuggestions = { titles: [], keywords: [] };
-                const topKeywords = this.analysis.keywords.slice(0, 30).map(kw => kw.term).join(', ');
-
-                const systemPrompt = "You are an SEO expert specializing in the Zazzle marketplace. Your goal is to generate compelling, keyword-rich product titles and a diverse list of long-tail keywords that will help a seller's product rank higher in search.";
-                const userQuery = `Based on this list of top-performing keywords for the niche '${this.searchTerm}', please generate 5 unique product titles and 20 related long-tail keywords.\n\nKeywords: ${topKeywords}`;
-                
-                try {
-                    const apiKey = this.geminiApiKey;
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-                    const payload = {
-                        contents: [{ parts: [{ text: userQuery }] }],
-                        systemInstruction: { parts: [{ text: systemPrompt }] },
-                        generationConfig: {
-                            responseMimeType: "application/json",
-                            responseSchema: {
-                                type: "OBJECT",
-                                properties: {
-                                    "titles": { "type": "ARRAY", "items": { "type": "STRING" }},
-                                    "keywords": { "type": "ARRAY", "items": { "type": "STRING" }}
-                                }
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (data.products && data.products.length === 0) {
+                                this.error = "No products found for this search term. Try something broader.";
+                            } else {
+                                this.products = data.products;
+                                this.analysis = data.analysis;
+                                this.topProduct = data.topProduct;
+                                this.market = data.market;
+                                this.getAiProductBlueprint();
                             }
-                        }
-                    };
-                    const response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    if (response.status === 401) throw new Error("Unauthorized (401). Please check if your Gemini API key is correct and has the necessary permissions.");
-                    if (!response.ok) throw new Error(`Gemini API request failed with status ${response.status}`);
-                    const result = await response.json();
-                    const suggestionsText = result.candidates[0].content.parts[0].text;
-                    this.aiSuggestions = JSON.parse(suggestionsText);
+                        })
+                        .catch(error => {
+                            console.error('API call failed:', error);
+                            this.error = `API call failed: ${error.message}. Check your Backend URL and the browser console for details.`;
+                        })
+                        .finally(() => { this.loading = false; });
+                },
 
-                } catch(e) {
-                    console.error("AI Suggestions failed:", e);
-                    this.aiSuggestions.titles = [`Error generating suggestions: ${e.message}`];
-                } finally {
-                    this.loadingSuggestions = false;
+                getBadgeValue(product, badgeType, valueKey) {
+                    if (!product || !product.badges || !Array.isArray(product.badges)) return null;
+                    const badge = product.badges.find(b => b.type === badgeType);
+                    return badge ? badge[valueKey] : null;
+                },
+
+                // ** MODIFIED AI BLUEPRINT FUNCTION **
+                async getAiProductBlueprint() {
+                    if (!this.topProduct) return;
+                    if (!this.geminiApiKey) {
+                        this.aiBlueprint.winningIdea = "Please enter your Gemini API key above to use this feature.";
+                        return;
+                    }
+                    this.loadingBlueprint = true;
+
+                    const topProductData = {
+                        title: this.topProduct.titleSeo,
+                        description: this.topProduct.description,
+                        keywords: this.topProduct.keywords.split('+').join(', ')
+                    };
+
+                    const systemPrompt = "You are a Zazzle product strategy expert. Your goal is to provide a concise, actionable 'Product Blueprint' for a seller. Analyze the top product data for a niche and generate a winning product idea and an SEO-friendly product description. The response must be a JSON object with two keys: 'winningIdea' and 'productDescription'.";
+                    const userQuery = `The top-selling product in the "${this.searchTerm}" niche is: ${JSON.stringify(topProductData, null, 2)}. Based on this, provide a new 'winningIdea' and a 'productDescription' for a similar but unique product.`;
+
+                    try {
+                        const apiKey = this.geminiApiKey;
+                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+                        const payload = {
+                            contents: [{ parts: [{ text: userQuery }] }],
+                            generationConfig: {
+                                responseMimeType: "application/json",
+                            }
+                        };
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!response.ok) throw new Error(`Gemini API request failed with status ${response.status}`);
+
+                        const result = await response.json();
+                        const rawText = result.candidates[0].content.parts[0].text;
+
+                        // --- START: Robust JSON Extraction ---
+                        const startIndex = rawText.indexOf('{');
+                        const endIndex = rawText.lastIndexOf('}');
+                        if (startIndex === -1 || endIndex === -1) {
+                            throw new Error("Could not find a valid JSON object in the AI's response.");
+                        }
+                        const jsonString = rawText.substring(startIndex, endIndex + 1);
+                        this.aiBlueprint = JSON.parse(jsonString);
+                        // --- END: Robust JSON Extraction ---
+
+                    } catch (e) {
+                        console.error("AI Blueprint generation failed:", e);
+                        this.aiBlueprint.winningIdea = `Could not generate AI blueprint: ${e.message}`;
+                    } finally {
+                        this.loadingBlueprint = false;
+                    }
+                },
+
+                // ** MODIFIED AI SUGGESTIONS FUNCTION **
+                async getAiSuggestions() {
+                    if (!this.geminiApiKey) {
+                        this.aiSuggestions.titles = ["Please enter your Gemini API key to use this feature."];
+                        return;
+                    }
+                    this.loadingSuggestions = true;
+                    this.aiSuggestions = { titles: [], keywords: [] };
+                    const topKeywords = this.analysis.keywords.slice(0, 30).map(kw => kw.term).join(', ');
+
+                    const systemPrompt = "You are an SEO expert specializing in the Zazzle marketplace. Your goal is to generate compelling, keyword-rich product titles and a diverse list of long-tail keywords that will help a seller's product rank higher in search.";
+                    const userQuery = `Based on this list of top-performing keywords for the niche '${this.searchTerm}', please generate 5 unique product titles and 20 related long-tail keywords.\n\nKeywords: ${topKeywords}`;
+
+                    try {
+                        const apiKey = this.geminiApiKey;
+                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+                        const payload = {
+                            contents: [{ parts: [{ text: userQuery }] }],
+                            generationConfig: {
+                                responseMimeType: "application/json",
+                            }
+                        };
+
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!response.ok) throw new Error(`Gemini API request failed with status ${response.status}`);
+
+                        const result = await response.json();
+                        const rawText = result.candidates[0].content.parts[0].text;
+
+                        // --- START: Robust JSON Extraction ---
+                        const startIndex = rawText.indexOf('{');
+                        const endIndex = rawText.lastIndexOf('}');
+                        if (startIndex === -1 || endIndex === -1) {
+                            throw new Error("Could not find a valid JSON object in the AI's response.");
+                        }
+                        const jsonString = rawText.substring(startIndex, endIndex + 1);
+                        this.aiSuggestions = JSON.parse(jsonString);
+                        // --- END: Robust JSON Extraction ---
+
+                    } catch (e) {
+                        console.error("AI Suggestions failed:", e);
+                        this.aiSuggestions.titles = [`Error generating suggestions: ${e.message}`];
+                    } finally {
+                        this.loadingSuggestions = false;
+                    }
                 }
             }
         }
-    }
-</script>
+    </script>
 </head>
+
 <body class="text-gray-200">
 
     <div x-data="zazzleTool()" x-cloak class="container mx-auto p-4 md:p-8">
-        
+
         <header class="text-center mb-8">
             <h1 class="text-4xl font-bold text-white mb-2">Zazzle Seller Insights Tool</h1>
             <p class="text-lg text-gray-400">Unlock Market Trends and Optimize Your Listings</p>
@@ -236,16 +250,24 @@
         <!-- Search and Controls Section -->
         <div class="bg-gray-800 p-6 rounded-2xl shadow-lg mb-8 space-y-4">
             <div>
-                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                     <div class="col-span-1 md:col-span-2">
-                        <label for="search-term" class="block text-sm font-medium text-gray-300 mb-1">Search Keyword / Niche</label>
-                        <input type="text" id="search-term" x-model="searchTerm" @keydown.enter="search()" placeholder="e.g., boho wedding invitation, gifts for nurses" class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                        <label for="search-term" class="block text-sm font-medium text-gray-300 mb-1">Search Keyword /
+                            Niche</label>
+                        <input type="text" id="search-term" x-model="searchTerm" @keydown.enter="search()"
+                            placeholder="e.g., boho wedding invitation, gifts for nurses"
+                            class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                     </div>
                     <div>
-                        <button @click="search()" :disabled="loading" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center">
-                            <svg x-show="loading" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        <button @click="search()" :disabled="loading"
+                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center">
+                            <svg x-show="loading" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
+                                xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                    stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                                </path>
                             </svg>
                             <span x-text="loading ? 'Analyzing...' : 'Analyze Niche'"></span>
                         </button>
@@ -254,13 +276,21 @@
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <label for="backend-url" class="block text-sm font-medium text-gray-300 mb-1">Your Tool Backend URL</label>
-                    <input type="text" id="backend-url" x-model="backendUrl" @input="localStorage.setItem('zazzleToolBackendUrl', backendUrl)" placeholder="https://your-worker.your-domain.workers.dev" class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                    <label for="backend-url" class="block text-sm font-medium text-gray-300 mb-1">Your Tool Backend
+                        URL</label>
+                    <input type="text" id="backend-url" x-model="backendUrl"
+                        @input="localStorage.setItem('zazzleToolBackendUrl', backendUrl)"
+                        placeholder="https://your-worker.your-domain.workers.dev"
+                        class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                     <p class="text-xs text-gray-500 mt-1">Required for live Zazzle data. Saved in your browser.</p>
                 </div>
-                 <div>
-                    <label for="gemini-api-key" class="block text-sm font-medium text-gray-300 mb-1">Your Gemini API Key</label>
-                    <input type="password" id="gemini-api-key" x-model="geminiApiKey" @input="localStorage.setItem('zazzleToolGeminiApiKey', geminiApiKey)" placeholder="Enter your Gemini API key here" class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                <div>
+                    <label for="gemini-api-key" class="block text-sm font-medium text-gray-300 mb-1">Your Gemini API
+                        Key</label>
+                    <input type="password" id="gemini-api-key" x-model="geminiApiKey"
+                        @input="localStorage.setItem('zazzleToolGeminiApiKey', geminiApiKey)"
+                        placeholder="Enter your Gemini API key here"
+                        class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                     <p class="text-xs text-gray-500 mt-1">Required for AI features. Saved in your browser.</p>
                 </div>
             </div>
@@ -274,74 +304,105 @@
             </div>
             <div class="bg-gray-800 p-4 rounded-xl">
                 <div class="text-sm font-medium text-gray-400">Top Product Sales</div>
-                <div class="text-2xl font-bold text-green-400" x-text="topProduct ? (getBadgeValue(topProduct, 'BoughtXTimesInMonth', 'orderItemCount') || 'N/A') : 'N/A'"></div>
+                <div class="text-2xl font-bold text-green-400"
+                    x-text="topProduct ? (getBadgeValue(topProduct, 'BoughtXTimesInMonth', 'orderItemCount') || 'N/A') : 'N/A'">
+                </div>
                 <div class="text-xs text-gray-500">Est. Sales/Mo for #1 Product</div>
             </div>
             <div class="bg-gray-800 p-4 rounded-xl">
                 <div class="text-sm font-medium text-gray-400">Dominant Product Type</div>
-                <div class="text-2xl font-bold text-blue-400" x-text="analysis.productTypes.length > 0 ? analysis.productTypes[0].type.replace('zazzle_', '') : 'N/A'"></div>
+                <div class="text-2xl font-bold text-blue-400"
+                    x-text="analysis.productTypes.length > 0 ? analysis.productTypes[0].type.replace('zazzle_', '') : 'N/A'">
+                </div>
                 <div class="text-xs text-gray-500">Most Frequent in Top Results</div>
             </div>
         </div>
 
         <!-- Loading, Error and Results Section -->
         <div x-show="!initialLoad">
-             <!-- Error Message -->
+            <!-- Error Message -->
             <template x-if="error">
-                <div class="bg-red-800/80 border border-red-600 text-white p-4 rounded-lg shadow-lg mb-6" x-text="error"></div>
+                <div class="bg-red-800/80 border border-red-600 text-white p-4 rounded-lg shadow-lg mb-6"
+                    x-text="error"></div>
             </template>
-            
+
             <!-- Analysis Tabs -->
             <div x-show="products.length > 0" class="mb-6">
                 <div class="border-b border-gray-700">
                     <nav class="-mb-px flex space-x-6 overflow-x-auto" aria-label="Tabs">
-                        <button @click="view = 'products'" :class="{'border-blue-500 text-blue-400': view === 'products', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'products'}" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
+                        <button @click="view = 'products'"
+                            :class="{'border-blue-500 text-blue-400': view === 'products', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'products'}"
+                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
                             Top Products
                         </button>
-                        <button @click="view = 'keywords'" :class="{'border-blue-500 text-blue-400': view === 'keywords', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'keywords'}" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
+                        <button @click="view = 'keywords'"
+                            :class="{'border-blue-500 text-blue-400': view === 'keywords', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'keywords'}"
+                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
                             Keyword Analysis
                         </button>
-                        <button @click="view = 'stores'" :class="{'border-blue-500 text-blue-400': view === 'stores', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'stores'}" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
+                        <button @click="view = 'stores'"
+                            :class="{'border-blue-500 text-blue-400': view === 'stores', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'stores'}"
+                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
                             Top Stores
                         </button>
-                        <button @click="view = 'ai_blueprint'" :class="{'border-blue-500 text-blue-400': view === 'ai_blueprint', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'ai_blueprint'}" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
+                        <button @click="view = 'ai_blueprint'"
+                            :class="{'border-blue-500 text-blue-400': view === 'ai_blueprint', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'ai_blueprint'}"
+                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
                             AI Product Blueprint ✨
                         </button>
-                        <button @click="view = 'product_types'" :class="{'border-blue-500 text-blue-400': view === 'product_types', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'product_types'}" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
+                        <button @click="view = 'product_types'"
+                            :class="{'border-blue-500 text-blue-400': view === 'product_types', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'product_types'}"
+                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition">
                             Product Types
                         </button>
                     </nav>
                 </div>
             </div>
-            
+
             <!-- Product Grid -->
             <div x-show="view === 'products'" x-transition>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     <template x-for="(product, index) in products" :key="product.id">
-                        <div class="bg-gray-800 rounded-2xl shadow-lg overflow-hidden flex flex-col transition-transform duration-300 hover:transform hover:-translate-y-1">
+                        <div
+                            class="bg-gray-800 rounded-2xl shadow-lg overflow-hidden flex flex-col transition-transform duration-300 hover:transform hover:-translate-y-1">
                             <img :src="product.imageUrl" :alt="product.titleSeo" class="w-full h-48 object-cover">
                             <div class="p-4 flex flex-col flex-grow">
-                                <h3 class="text-md font-semibold text-white mb-1 h-12 overflow-hidden" x-text="product.titleSeo"></h3>
-                                <p class="text-sm text-gray-400 mb-3">by <span class="font-medium text-gray-300" x-text="product.storeName"></span></p>
-                                
+                                <h3 class="text-md font-semibold text-white mb-1 h-12 overflow-hidden"
+                                    x-text="product.titleSeo"></h3>
+                                <p class="text-sm text-gray-400 mb-3">by <span class="font-medium text-gray-300"
+                                        x-text="product.storeName"></span></p>
+
                                 <div class="grid grid-cols-2 gap-3 text-sm mb-4">
                                     <div class="flex items-center space-x-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd" /></svg>
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-400"
+                                            viewBox="0 0 20 20" fill="currentColor">
+                                            <path fill-rule="evenodd"
+                                                d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z"
+                                                clip-rule="evenodd" />
+                                        </svg>
                                         <div>
-                                            <div class="font-bold text-white" x-text="getBadgeValue(product, 'BoughtXTimesInMonth', 'orderItemCount') || 'N/A'"></div>
+                                            <div class="font-bold text-white"
+                                                x-text="getBadgeValue(product, 'BoughtXTimesInMonth', 'orderItemCount') || 'N/A'">
+                                            </div>
                                             <div class="text-xs text-gray-400">Sales/Mo</div>
                                         </div>
                                     </div>
                                     <div class="flex items-center space-x-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor"><path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
-                                         <div>
-                                            <div class="font-bold text-white" x-text="getBadgeValue(product, 'InXCarts', 'cartCount') || 'N/A'"></div>
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-400"
+                                            viewBox="0 0 20 20" fill="currentColor">
+                                            <path
+                                                d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" />
+                                        </svg>
+                                        <div>
+                                            <div class="font-bold text-white"
+                                                x-text="getBadgeValue(product, 'InXCarts', 'cartCount') || 'N/A'"></div>
                                             <div class="text-xs text-gray-400">In Carts</div>
                                         </div>
                                     </div>
                                 </div>
                                 <div class="mt-auto pt-3 border-t border-gray-700">
-                                     <a :href="product.linkUrl" target="_blank" class="text-blue-400 hover:text-blue-300 text-sm font-semibold w-full block text-center">
+                                    <a :href="product.linkUrl" target="_blank"
+                                        class="text-blue-400 hover:text-blue-300 text-sm font-semibold w-full block text-center">
                                         View on Zazzle &rarr;
                                     </a>
                                 </div>
@@ -353,7 +414,8 @@
             <div x-show="view === 'product_types'" x-transition>
                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
                     <h2 class="text-2xl font-bold text-white mb-4">Product Type Analysis</h2>
-                    <p class="text-gray-400 mb-6">These are the most common product types found in the top search results, indicating what customers are buying in this niche.</p>
+                    <p class="text-gray-400 mb-6">These are the most common product types found in the top search
+                        results, indicating what customers are buying in this niche.</p>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm text-left text-gray-300">
                             <thead class="text-xs text-gray-400 uppercase bg-gray-700/50">
@@ -365,7 +427,8 @@
                             <tbody>
                                 <template x-for="pt in analysis.productTypes" :key="pt.type">
                                     <tr class="border-b border-gray-700 hover:bg-gray-700/50">
-                                        <td class="px-6 py-4 font-bold text-white" x-text="pt.type.replace('zazzle_', '')"></td>
+                                        <td class="px-6 py-4 font-bold text-white"
+                                            x-text="pt.type.replace('zazzle_', '')"></td>
                                         <td class="px-6 py-4 text-right font-semibold" x-text="pt.count"></td>
                                     </tr>
                                 </template>
@@ -376,21 +439,31 @@
             </div>
             <!-- Keyword Analysis -->
             <div x-show="view === 'keywords'" x-transition>
-                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
-                     <h2 class="text-2xl font-bold text-white mb-4">Top Keywords Analysis</h2>
-                     <p class="text-gray-400 mb-6">These are the most frequently used keywords by the top-selling products in this niche.</p>
-                     <div class="flex flex-wrap gap-3">
-                         <template x-for="keyword in analysis.keywords.slice(0, 50)" :key="keyword.term">
-                              <div class="bg-gray-700 rounded-full px-4 py-2 text-sm flex items-center space-x-2">
-                                 <span class="font-medium text-white" x-text="keyword.term"></span>
-                                 <span class="text-xs bg-blue-600 text-white rounded-full px-2 py-0.5" x-text="keyword.count"></span>
-                             </div>
-                         </template>
-                     </div>
-                     <div class="mt-8 pt-6 border-t border-gray-700">
-                        <button @click="getAiSuggestions()" :disabled="loadingSuggestions" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-5 rounded-lg transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center">
-                             <svg x-show="loadingSuggestions" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                             <span x-text="loadingSuggestions ? 'Generating...' : '✨ Get AI Title & Tag Ideas'"></span>
+                <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
+                    <h2 class="text-2xl font-bold text-white mb-4">Top Keywords Analysis</h2>
+                    <p class="text-gray-400 mb-6">These are the most frequently used keywords by the top-selling
+                        products in this niche.</p>
+                    <div class="flex flex-wrap gap-3">
+                        <template x-for="keyword in analysis.keywords.slice(0, 50)" :key="keyword.term">
+                            <div class="bg-gray-700 rounded-full px-4 py-2 text-sm flex items-center space-x-2">
+                                <span class="font-medium text-white" x-text="keyword.term"></span>
+                                <span class="text-xs bg-blue-600 text-white rounded-full px-2 py-0.5"
+                                    x-text="keyword.count"></span>
+                            </div>
+                        </template>
+                    </div>
+                    <div class="mt-8 pt-6 border-t border-gray-700">
+                        <button @click="getAiSuggestions()" :disabled="loadingSuggestions"
+                            class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-5 rounded-lg transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center">
+                            <svg x-show="loadingSuggestions" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
+                                xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                    stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                                </path>
+                            </svg>
+                            <span x-text="loadingSuggestions ? 'Generating...' : '✨ Get AI Title & Tag Ideas'"></span>
                         </button>
                         <div x-show="aiSuggestions.titles.length > 0" class="mt-6 space-y-6">
                             <div>
@@ -401,24 +474,27 @@
                                     </template>
                                 </ul>
                             </div>
-                             <div>
+                            <div>
                                 <h3 class="text-xl font-semibold text-white mb-3">AI-Generated Keywords:</h3>
-                                 <div class="flex flex-wrap gap-2">
-                                     <template x-for="kw in aiSuggestions.keywords">
-                                        <span class="bg-gray-700 text-gray-200 text-xs font-medium px-2.5 py-1 rounded-full" x-text="kw"></span>
-                                     </template>
-                                 </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="kw in aiSuggestions.keywords">
+                                        <span
+                                            class="bg-gray-700 text-gray-200 text-xs font-medium px-2.5 py-1 rounded-full"
+                                            x-text="kw"></span>
+                                    </template>
+                                </div>
                             </div>
                         </div>
-                     </div>
-                 </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Store Analysis -->
             <div x-show="view === 'stores'" x-transition>
                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
                     <h2 class="text-2xl font-bold text-white mb-4">Top Stores Analysis</h2>
-                    <p class="text-gray-400 mb-6">Discover the dominant stores in this niche based on aggregated monthly sales and product count from the search results.</p>
+                    <p class="text-gray-400 mb-6">Discover the dominant stores in this niche based on aggregated monthly
+                        sales and product count from the search results.</p>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm text-left text-gray-300">
                             <thead class="text-xs text-gray-400 uppercase bg-gray-700/50">
@@ -435,7 +511,8 @@
                                     <tr class="border-b border-gray-700 hover:bg-gray-700/50">
                                         <td class="px-6 py-4 font-medium" x-text="index + 1"></td>
                                         <td class="px-6 py-4 font-bold text-white" x-text="store.name"></td>
-                                        <td class="px-6 py-4 text-green-400 font-semibold" x-text="store.totalSales"></td>
+                                        <td class="px-6 py-4 text-green-400 font-semibold" x-text="store.totalSales">
+                                        </td>
                                         <td class="px-6 py-4" x-text="store.productCount"></td>
                                         <td class="px-6 py-4" x-text="`$${store.averagePrice.toFixed(2)}`"></td>
                                     </tr>
@@ -445,36 +522,51 @@
                     </div>
                 </div>
             </div>
-            
+
             <!-- AI Product Blueprint -->
             <div x-show="view === 'ai_blueprint'" x-transition>
                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
-                    <h2 class="text-2xl font-bold text-white mb-4">✨ AI Product Blueprint for "<span x-text="searchTerm"></span>"</h2>
+                    <h2 class="text-2xl font-bold text-white mb-4">✨ AI Product Blueprint for "<span
+                            x-text="searchTerm"></span>"</h2>
                     <div x-show="loadingBlueprint" class="text-center py-8">
-                         <svg class="animate-spin mx-auto h-8 w-8 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                         <p class="mt-3 text-gray-400">Gemini is generating your product blueprint...</p>
+                        <svg class="animate-spin mx-auto h-8 w-8 text-white" xmlns="http://www.w3.org/2000/svg"
+                            fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
+                            </circle>
+                            <path class="opacity-75" fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                            </path>
+                        </svg>
+                        <p class="mt-3 text-gray-400">Gemini is generating your product blueprint...</p>
                     </div>
                     <div x-show="!loadingBlueprint && aiBlueprint.winningIdea">
                         <!-- Top Product Section -->
                         <template x-if="topProduct">
                             <div class="mb-8 p-4 border border-gray-700 rounded-lg">
                                 <h3 class="text-xl font-semibold text-white mb-4">Top Product for Design Reference</h3>
-                                 <div class="flex flex-col md:flex-row gap-6">
-                                    <img :src="topProduct.imageUrl" :alt="topProduct.titleSeo" class="w-full md:w-1/3 h-auto object-cover rounded-lg">
+                                <div class="flex flex-col md:flex-row gap-6">
+                                    <img :src="topProduct.imageUrl" :alt="topProduct.titleSeo"
+                                        class="w-full md:w-1/3 h-auto object-cover rounded-lg">
                                     <div class="flex-1">
                                         <h4 class="text-lg font-bold text-white" x-text="topProduct.titleSeo"></h4>
-                                        <p class="text-sm text-gray-400 mb-4">by <span x-text="topProduct.storeName"></span></p>
+                                        <p class="text-sm text-gray-400 mb-4">by <span
+                                                x-text="topProduct.storeName"></span></p>
                                         <div class="flex items-center space-x-6">
-                                             <div class="text-center">
-                                                <div class="text-2xl font-bold text-green-400" x-text="getBadgeValue(topProduct, 'BoughtXTimesInMonth', 'orderItemCount') || 'N/A'"></div>
+                                            <div class="text-center">
+                                                <div class="text-2xl font-bold text-green-400"
+                                                    x-text="getBadgeValue(topProduct, 'BoughtXTimesInMonth', 'orderItemCount') || 'N/A'">
+                                                </div>
                                                 <div class="text-sm text-gray-400">Sales/Month</div>
                                             </div>
                                             <div class="text-center">
-                                                <div class="text-2xl font-bold text-blue-400" x-text="getBadgeValue(topProduct, 'InXCarts', 'cartCount') || 'N/A'"></div>
+                                                <div class="text-2xl font-bold text-blue-400"
+                                                    x-text="getBadgeValue(topProduct, 'InXCarts', 'cartCount') || 'N/A'">
+                                                </div>
                                                 <div class="text-sm text-gray-400">In Carts</div>
                                             </div>
                                         </div>
-                                        <a :href="topProduct.linkUrl" target="_blank" class="inline-block mt-4 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg text-sm">
+                                        <a :href="topProduct.linkUrl" target="_blank"
+                                            class="inline-block mt-4 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg text-sm">
                                             View Product &rarr;
                                         </a>
                                     </div>
@@ -486,11 +578,13 @@
                         <div class="space-y-6">
                             <div>
                                 <h3 class="text-xl font-semibold text-white mb-2">💡 Winning Product Idea</h3>
-                                <p class="text-gray-300 bg-gray-900/50 p-4 rounded-lg" x-text="aiBlueprint.winningIdea"></p>
+                                <p class="text-gray-300 bg-gray-900/50 p-4 rounded-lg" x-text="aiBlueprint.winningIdea">
+                                </p>
                             </div>
                             <div>
                                 <h3 class="text-xl font-semibold text-white mb-2">📝 Generated Product Description</h3>
-                                <p class="text-gray-300 leading-relaxed whitespace-pre-wrap bg-gray-900/50 p-4 rounded-lg" x-text="aiBlueprint.productDescription"></p>
+                                <p class="text-gray-300 leading-relaxed whitespace-pre-wrap bg-gray-900/50 p-4 rounded-lg"
+                                    x-text="aiBlueprint.productDescription"></p>
                             </div>
                         </div>
                     </div>
@@ -501,4 +595,5 @@
     </div>
 
 </body>
+
 </html>
