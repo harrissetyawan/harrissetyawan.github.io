@@ -78,10 +78,18 @@
                     this.sortBy = key;
                 },
 
-                aiBlueprint: { winningIdea: '', productDescription: '' },
-                aiSuggestions: { titles: [], keywords: [] },
+                aiBlueprint: {
+                    winningIdea: '',
+                    productDescription: '',
+                    marketAnalysis: '' // To store the AI's reasoning
+                },
+                aiSuggestions: {
+                    titles: [],
+                    keywords: []
+                },
                 loadingBlueprint: false,
                 loadingSuggestions: false,
+
 
                 search() {
                     if (!this.searchTerm.trim()) { this.error = "Please enter a search keyword or niche."; return; }
@@ -104,7 +112,7 @@
                         workerUrl = workerUrl.slice(0, -1);
                     }
                     const fetchUrl = `${workerUrl}/api/search?term=${encodedSearchTerm}&sortBy=${this.searchOptions.sortBy}&department=${this.searchOptions.department}&pageSize=${this.searchOptions.pageSize}`;
-                    
+
                     fetch(fetchUrl)
                         .then(response => {
                             if (!response.ok) {
@@ -137,54 +145,55 @@
                         return;
                     }
                     this.loadingBlueprint = true;
+                    this.aiBlueprint = { winningIdea: '', productDescription: '', marketAnalysis: '' };
 
+                    // --- Assemble a comprehensive market report for the AI ---
                     const marketData = {
                         topKeywords: this.analysis.keywords.slice(0, 10).map(kw => kw.term),
                         dominantProductTypes: this.analysis.productTypes.slice(0, 5).map(pt => pt.type),
-                        topPerformingProduct: {
-                            title: this.topProduct.titleSeo,
-                            description: this.topProduct.description,
-                            keywords: this.topProduct.keywords.split('+')
-                        }
+                        top3Products: this.sortedProducts.slice(0, 5).map(p => ({ title: p.titleSeo, keywords: p.keywords.split('+') })),
                     };
-
-                    const systemPrompt = "You are a Zazzle product strategy expert. Your goal is to provide a concise, actionable 'Product Blueprint' for a seller. Analyze the provided market data for a niche, identify a strategic opportunity, and generate a winning product idea and an SEO-friendly product description. The response must be a JSON object with two keys: 'winningIdea' and 'productDescription'.";
-                    const userQuery = `Analyze the following market data for the "${this.searchTerm}" niche and generate your blueprint:\n${JSON.stringify(marketData, null, 2)}`;
 
                     try {
                         const apiKey = this.geminiApiKey;
                         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
-                        const payload = {
-                            contents: [{ parts: [{ text: userQuery }] }],
-                            generationConfig: {
-                                responseMimeType: "application/json",
-                                responseSchema: {
-                                    type: "OBJECT",
-                                    properties: {
-                                        "winningIdea": { "type": "STRING" },
-                                        "productDescription": { "type": "STRING" }
-                                    },
-                                    required: ["winningIdea", "productDescription"]
-                                }
-                            }
+                        // --- STEP 1: Ask the AI to ANALYZE the market ---
+                        const analysisSystemPrompt = "You are a Zazzle product strategy expert. Analyze the provided market data. In a concise paragraph, identify the core themes, the dominant style, and a potential strategic opportunity or underserved gap in the market.";
+                        const analysisUserQuery = `Here is the market data for the "${this.searchTerm}" niche:\n${JSON.stringify(marketData, null, 2)}`;
+
+                        const analysisPayload = { contents: [{ parts: [{ text: analysisUserQuery }] }], system_instruction: { parts: [{ text: analysisSystemPrompt }] } };
+
+                        const analysisResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(analysisPayload) });
+                        if (!analysisResponse.ok) throw new Error(`Gemini analysis request failed with status ${analysisResponse.status}`);
+
+                        const analysisResult = await analysisResponse.json();
+                        this.aiBlueprint.marketAnalysis = analysisResult.candidates[0].content.parts[0].text;
+
+                        // --- STEP 2: Ask the AI to CREATE a blueprint based on its own analysis ---
+                        const creationSystemPrompt = "You are a Zazzle product strategy expert. Based on your previous market analysis, generate a 'Product Blueprint'. The response must be a JSON object with two keys: 'winningIdea' (a concise, actionable product idea that fills the opportunity you identified) and 'productDescription' (an SEO-friendly product description).";
+                        const creationUserQuery = `Based on your analysis: "${this.aiBlueprint.marketAnalysis}"\n\nNow, generate the JSON product blueprint.`;
+
+                        const creationPayload = {
+                            contents: [{ parts: [{ text: creationUserQuery }] }],
+                            system_instruction: { parts: [{ text: creationSystemPrompt }] },
+                            generationConfig: { responseMimeType: "application/json" }
                         };
 
-                        const response = await fetch(apiUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                        });
-                        if (!response.ok) throw new Error(`Gemini API request failed with status ${response.status}`);
+                        const creationResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(creationPayload) });
+                        if (!creationResponse.ok) throw new Error(`Gemini creation request failed with status ${creationResponse.status}`);
 
-                        const result = await response.json();
-                        const rawText = result.candidates[0].content.parts[0].text;
+                        const creationResult = await creationResponse.json();
+                        const rawText = creationResult.candidates[0].content.parts[0].text;
+                        const parsedResponse = JSON.parse(rawText);
 
-                        this.aiBlueprint = JSON.parse(rawText);
+                        this.aiBlueprint.winningIdea = parsedResponse.winningIdea || "[AI did not provide an idea]";
+                        this.aiBlueprint.productDescription = parsedResponse.productDescription || "[AI did not provide a description]";
 
                     } catch (e) {
                         console.error("AI Blueprint generation failed:", e);
                         this.aiBlueprint.winningIdea = `Could not generate AI blueprint: ${e.message}`;
+                        this.aiBlueprint.marketAnalysis = "The AI failed to analyze the market. Please check the console for errors."
                     } finally {
                         this.loadingBlueprint = false;
                     }
@@ -589,6 +598,10 @@
                             </path>
                         </svg>
                         <p class="mt-3 text-gray-400">Gemini is analyzing the market...</p>
+                    </div>
+                    <div x-show="!loadingBlueprint && aiBlueprint.marketAnalysis" class="mb-6">
+                        <h3 class="text-xl font-semibold text-white mb-2">🤖 AI Market Analysis</h3>
+                        <p class="text-gray-300 bg-gray-900/50 p-4 rounded-lg italic" x-text="aiBlueprint.marketAnalysis"></p>
                     </div>
                     <div x-show="!loadingBlueprint && aiBlueprint.winningIdea">
                         <template x-if="topProduct">
