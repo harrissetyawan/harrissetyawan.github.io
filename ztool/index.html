@@ -43,6 +43,11 @@
                 searchTerm: '',
                 geminiApiKey: localStorage.getItem('zazzleToolGeminiApiKey') || '',
                 backendUrl: localStorage.getItem('zazzleToolBackendUrl') || '',
+                searchOptions: {
+                    sortBy: 'orderitemcount_month', // Default to current bestsellers
+                    department: '0',
+                    pageSize: '120',
+                },
                 loading: false,
                 initialLoad: true,
                 error: null,
@@ -98,8 +103,8 @@
                     if (workerUrl.endsWith('/')) {
                         workerUrl = workerUrl.slice(0, -1);
                     }
-                    const fetchUrl = `${workerUrl}/api/search?term=${encodedSearchTerm}`;
-
+                    const fetchUrl = `${workerUrl}/api/search?term=${encodedSearchTerm}&sortBy=${this.searchOptions.sortBy}&department=${this.searchOptions.department}&pageSize=${this.searchOptions.pageSize}`;
+                    
                     fetch(fetchUrl)
                         .then(response => {
                             if (!response.ok) {
@@ -274,6 +279,41 @@
                         </svg>
                         <span x-text="loading ? 'Analyzing...' : 'Analyze Niche'"></span>
                     </button>
+                </div>
+            </div>
+            <div class="pt-4 border-t border-gray-700 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label for="sort-by" class="block text-sm font-medium text-gray-300 mb-1">Sort By</label>
+                    <select id="sort-by" x-model="searchOptions.sortBy"
+                        class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                        <option value="orderitemcount_month">Current Bestsellers</option>
+                        <option value="orderitemcount_all">All-Time Bestsellers</option>
+                        <option value="trending">Trending</option>
+                        <option value="newest">Newest</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="search-in" class="block text-sm font-medium text-gray-300 mb-1">Search In
+                        Category</label>
+                    <select id="search-in" x-model="searchOptions.department"
+                        class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                        <option value="0">All Departments</option>
+                        <option value="252473910063999984">Weddings</option>
+                        <option value="252371268337590245">Invitations & Stationery</option>
+                        <option value="252448753675037147">Clothing & Shoes</option>
+                        <option value="252283360970275166">Home & Living</option>
+                        <option value="252009495515157786">Wall Art & Décor</option>
+                        <option value="252418476255124334">Office & School</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="search-depth" class="block text-sm font-medium text-gray-300 mb-1">Search Depth</label>
+                    <select id="search-depth" x-model="searchOptions.pageSize"
+                        class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                        <option value="60">Analyze Top 60</option>
+                        <option value="120">Analyze Top 120</option>
+                        <option value="240">Analyze Top 240</option>
+                    </select>
                 </div>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
