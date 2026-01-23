@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "watch": "npx tailwindcss -i ./input.css -o ./calc-style.css --watch"
+  },
+  "devDependencies": {
+    "postcss": "^8.5.3",
+    "postcss-nested": "^7.0.2",
+    "tailwindcss-scoped-preflight": "^3.4.12"
+  }
+}

@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom styles */
+@layer components {
+	.input-wrapper {
+		@apply flex flex-col space-y-2;
+	}
+
+	.btn-primary {
+		@apply inline-flex items-center space-x-2 drop-shadow-md bg-primary text-white px-4 py-2 rounded-xl hover:bg-blue-800 transition-all duration-300;
+	}
+}
+
+/* Base styles */
+:root {
+	font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+	line-height: 1.5;
+	font-weight: 400;
+	color: #222;
+	background-color: #ffffff;
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	-webkit-text-size-adjust: 100%;
+}
+
+/* Style untuk input */
+input[type="number"],
+input[type="text"],
+input[type="email"],
+input[type="tel"],
+select {
+	@apply w-full border border-solid border-gray-300 rounded-2xl px-4 py-2 text-black leading-relaxed placeholder-gray-400 transition ease-out duration-300 focus:outline-none focus:border-primary z-0 font-normal bg-white;
+}
+
+img {
+	margin-bottom: 1.5rem;
+}
+
+img:hover {
+	filter: drop-shadow(0 0 2em #673ab8aa);
+}
+
+section {
+	margin-top: 5rem;
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	column-gap: 1.5rem;
+}
+
+.resource {
+	padding: 0.75rem 1.5rem;
+	border-radius: 0.5rem;
+	text-align: left;
+	text-decoration: none;
+	color: #222;
+	background-color: #f1f1f1;
+	border: 1px solid transparent;
+}
+
+.resource:hover {
+	border: 1px solid #000;
+	box-shadow: 0 25px 50px -12px #673ab888;
+}
+
+@media (max-width: 639px) {
+	#app {
+		margin: 2rem;
+	}
+	section {
+		margin-top: 5rem;
+		grid-template-columns: 1fr;
+		row-gap: 1rem;
+	}
+}
+
+/* Tambahan style dari multi-step.mjs */
+.inputClass {
+	@apply w-full border border-solid border-gray-300 rounded-2xl px-4 py-2 text-black leading-relaxed placeholder-gray-400 transition ease-out duration-300 focus:outline-none focus:border-primary z-0 font-normal bg-white;
+}
+
+.tableInputClass {
+	@apply w-16 border border-solid border-gray-300 rounded-2xl px-4 py-2 text-black leading-relaxed placeholder-gray-400 transition ease-out duration-300 focus:outline-none focus:border-primary z-0 font-normal bg-white;
+}
+
+.optionClass {
+	@apply drop-shadow-sm bg-gray-50/100 flex flex-col w-[30%] rounded-xl p-4 py-9 border border-gray-300 cursor-pointer hover:bg-black hover:text-white transition-all duration-300 text-center;
+}
+
+.selectedOptionClass {
+	@apply bg-black text-white;
+}
