@@ -27,7 +27,7 @@ function Step0({onNext, setPowerOption, powerOption}) {
         <div class="flex flex-col text-center">
 
         <div class="space-y-2">
-          <h1 class="font-bold text-left text-xl">
+          <h1 class="font-bold text-left text-xl tracking-normal">
             Solar Energy for Your Home or Business:
           </h1>
           <p class="text-left text-gray-700 text-lg">
