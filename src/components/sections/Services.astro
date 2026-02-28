@@ -13,61 +13,61 @@ import c6 from "../../assets/pics/card-pic6.png";
 const cards = [
   {
     index: 1,
-    titleTop: "Search Engine",
-    titleBottom: "Optimization",
+    titleTop: "ROI",
+    titleBottom: "Calculators",
     img: c1,
-    alt: "SEO",
-    link: "https://google.com",
+    alt: "ROI",
+    link: "/calculators/roi",
   },
   {
     index: 2,
-    titleTop: "Pay-per-click",
-    titleBottom: "advertising",
+    titleTop: "Rental Yield",
+    titleBottom: "Calculators",
     img: c2,
-    alt: "SEO",
-    link: "https://google.com",
+    alt: "Rental Yield",
+    link: "/calculators/rental-yield",
   },
   {
     index: 3,
-    titleTop: "Social Media",
-    titleBottom: "Marketing",
+    titleTop: "Web",
+    titleBottom: "Development",
     img: c3,
-    alt: "SEO",
-    link: "https://google.com",
+    alt: "Web Development",
+    link: "/about",
   },
   {
     index: 1,
-    titleTop: "Email",
-    titleBottom: "Marketing",
+    titleTop: "Custom",
+    titleBottom: "Tools",
     img: c4,
-    alt: "SEO",
-    link: "https://google.com",
+    alt: "Custom Tools",
+    link: "/contact",
   },
   {
     index: 2,
-    titleTop: "Content",
-    titleBottom: "Creation",
+    titleTop: "API",
+    titleBottom: "Integration",
     img: c5,
-    alt: "SEO",
-    link: "https://google.com",
+    alt: "API Integration",
+    link: "/about",
   },
   {
     index: 3,
-    titleTop: "Analytics and",
-    titleBottom: "Tracking",
+    titleTop: "Technical",
+    titleBottom: "Support",
     img: c6,
-    alt: "SEO",
-    link: "https://google.com",
+    alt: "Technical Support",
+    link: "/contact",
   },
 ];
 
 const description =
-  "At our digital marketing agency, we offer a range of services to help businesses grow and succeed online. These services include";
+  "I build useful tools and web applications. These include";
 ---
 
 <Section id="services">
   <div class="mt-[140px] mb-5">
-    <SectionTitle sectionTitle="Services" description={description} />
+    <SectionTitle sectionTitle="What I Build" description={description} />
     <div class="grid lg:grid-cols-2 lg:grid-rows-3 gap-10">
       {
         cards.map((card) => (

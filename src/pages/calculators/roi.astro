@@ -1,0 +1,16 @@
+---
+import MainLayout from "../../layouts/MainLayout.astro";
+---
+
+<MainLayout title="Off-Plan ROI Calculator" description="Calculate your ROI for off-plan property investments">
+  <main class="py-8 px-4 mx-auto max-w-screen-xl lg:py-16 lg:px-6">
+    <a href="/calculators" class="inline-flex items-center font-medium text-black hover:text-green my-4">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="h-6 w-6">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16l-4-4m0 0l4-4m-4 4h18"></path>
+      </svg>
+      <span class="ml-1 font-bold text-lg">All Calculators</span>
+    </a>
+    <h1 class="text-3xl font-bold mb-8">Advanced Off-Plan ROI Calculator</h1>
+    <iframe src="/calculators/roi.html" class="w-full min-h-screen border-0" title="ROI Calculator"></iframe>
+  </main>
+</MainLayout>
