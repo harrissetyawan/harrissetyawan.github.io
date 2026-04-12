@@ -834,7 +834,7 @@ function Form({
         </div>
 
         <div class="flex flex-col gap-2">
-          <button class="self-end inline-flex items-center gap-2 drop-shadow-md bg-primary text-white px-4 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 transition-all duration-300" id="contact-send-button" type="button">Send ${arrowIcon}</button>
+          <button class="self-end inline-flex items-center gap-2 drop-shadow-md bg-primary text-white px-4 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 transition-all duration-300" id="contact-send-button" type="submit">Send ${arrowIcon}</button>
         </div>
 
       </div>
