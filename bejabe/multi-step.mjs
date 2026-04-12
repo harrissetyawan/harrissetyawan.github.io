@@ -1,10 +1,12 @@
 import { h, render } from 'https://esm.sh/preact';
 import htm from 'https://esm.sh/htm';
-import { useState, useEffect, useRef } from 'https://esm.sh/preact/hooks';
+import { useState, useEffect, useRef, useMemo } from 'https://esm.sh/preact/hooks';
 import ApexCharts from 'https://cdn.jsdelivr.net/npm/apexcharts/dist/apexcharts.esm.js';
 
 // Initialize htm with Preact
 const html = htm.bind(h);
+
+const MAD = "MAD";
 
 let inputClass = "w-full border border-solid border-gray-300 rounded-2xl px-4 py-2 text-gray-800 leading-relaxed placeholder-gray-400 transition ease-out duration-300 focus:outline-none focus:border-primary z-0 font-normal pac-target-input";
 
@@ -13,9 +15,174 @@ let tableInputClass = "w-16 border border-solid border-gray-300 rounded-2xl px-4
 let arrowIcon = html`<svg fill='currentColor' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 448 512' height='1rem'><path d='M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z'></path></svg>`
 let logoSvg = "https://cdn.prod.website-files.com/678bb0f77140ff853f58938b/681b442ce0d3a58cb606b62b_logo_colour_N1.svg";
 
+const INTEREST_TABLE = [
+  { rate: "3%", "6years": 0.191, "7years": 0.167, "8years": 0.149 },
+  { rate: "4%", "6years": 0.199, "7years": 0.175, "8years": 0.157 },
+  { rate: "5%", "6years": 0.207, "7years": 0.183, "8years": 0.165 },
+  { rate: "6%", "6years": 0.215, "7years": 0.191, "8years": 0.173 },
+  { rate: "7%", "6years": 0.224, "7years": 0.200, "8years": 0.181 },
+];
+
+function getInterestRow(interestRate) {
+  return (
+    INTEREST_TABLE.find((opt) => opt.rate === interestRate) || INTEREST_TABLE[2]
+  );
+}
+
+function getLeaseFactor(interestRate, yearsOfLoan) {
+  const row = getInterestRow(interestRate);
+  return row[yearsOfLoan] ?? row["6years"];
+}
+
+/** Lease table factor (e.g. 0.207) shown as % for current rate and tenor */
+function formatLeaseFactorPercentLabel(interestRate, yearsOfLoan) {
+  const factor = getLeaseFactor(interestRate, yearsOfLoan);
+  return (
+    (Number(factor) * 100).toLocaleString("fr-FR", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    }) + "%"
+  );
+}
+
+function computeLeaseMetrics({
+  usagePerDay,
+  marketPriceGas,
+  marketPriceKwh,
+  powerOption,
+  subsidy,
+  firstPayment,
+  interestRate,
+  yearsOfLoan,
+}) {
+  const ud = Number(usagePerDay) || 0;
+  const mpg = Number(marketPriceGas) || 0;
+  const mpk = Number(marketPriceKwh) || 0;
+  const dailyKwhPanels = powerOption === "offgrid" ? ud * 3.6 : ud;
+  const dailyKwhBattery = dailyKwhPanels * (powerOption === "offgrid" ? 0.45 : 0.3);
+  const panelCost = dailyKwhPanels * 1625;
+  const batteryCost = dailyKwhBattery * 4350;
+  const totalInvestment = panelCost + batteryCost;
+  const subsidyAmount = totalInvestment * subsidy;
+  const nettoInvestment = totalInvestment - subsidyAmount;
+  const firstPaymentAmount = firstPayment * totalInvestment;
+  const totalFinancialLease = nettoInvestment - firstPaymentAmount;
+  const selectedInterest = getInterestRow(interestRate);
+  const interestFactor = getLeaseFactor(interestRate, yearsOfLoan);
+  const yearlyFinancialLease = totalFinancialLease * interestFactor;
+  const yearlyMaintenance = totalInvestment * 0.008;
+  const yearlyInsurance = totalInvestment * 0.005;
+  const totalYearlyCosts =
+    yearlyFinancialLease + yearlyMaintenance + yearlyInsurance;
+  const monthlyPayment = totalYearlyCosts / 12;
+  const monthlyGasCost = ud * mpg * (365 / 12);
+  const monthlyGridCost = ud * mpk * (365 / 12);
+  return {
+    dailyKwhPanels,
+    dailyKwhBattery,
+    panelCost,
+    batteryCost,
+    totalInvestment,
+    subsidyAmount,
+    nettoInvestment,
+    firstPaymentAmount,
+    totalFinancialLease,
+    selectedInterest,
+    yearlyFinancialLease,
+    yearlyMaintenance,
+    yearlyInsurance,
+    totalYearlyCosts,
+    monthlyPayment,
+    monthlyGasCost,
+    monthlyGridCost,
+  };
+}
+
+const MAINTENANCE_INSURANCE_INFLATION = 1.05;
+
+function loanTermYearsFromKey(yearsOfLoan) {
+  const n = parseInt(String(yearsOfLoan), 10);
+  return n === 6 || n === 7 || n === 8 ? n : 6;
+}
+
+function buildYearlyComparisonData(
+  monthlyGasCost,
+  monthlyGridCost,
+  yearlyFinancialLease,
+  yearlyMaintenance,
+  yearlyInsurance,
+  yearsOfLoan
+) {
+  const mg = Number(monthlyGasCost) || 0;
+  const mgr = Number(monthlyGridCost) || 0;
+  const yfl = Number(yearlyFinancialLease) || 0;
+  const ym = Number(yearlyMaintenance) || 0;
+  const yi = Number(yearlyInsurance) || 0;
+  const loanYears = loanTermYearsFromKey(yearsOfLoan);
+
+  const gasolineValues = (() => {
+    const arr = Array(10).fill(mg);
+    arr[0] = Math.round(mg * 12);
+    for (let i = 1; i < 10; i++) {
+      arr[i] = arr[i - 1] * 1.05;
+    }
+    return arr;
+  })();
+
+  // Lease only during loan term (years 1..loanYears); after that finance = 0.
+  // Maintenance & insurance: compound +5% per year (index 0 = year 1).
+  const yGreenGasolineValues = Array.from({ length: 10 }, (_, y) =>
+    Math.round(
+      (y < loanYears ? yfl : 0) +
+        ym * Math.pow(MAINTENANCE_INSURANCE_INFLATION, y) +
+        yi * Math.pow(MAINTENANCE_INSURANCE_INFLATION, y)
+    )
+  );
+
+  const gasolineSavingsPercent = gasolineValues.map((gas, i) => {
+    const yGreen = yGreenGasolineValues[i] ?? 0;
+    return ((gas - yGreen) / gas * 100).toFixed(2);
+  });
+
+  const gasolineSavingsEuro = gasolineValues.map((gas, i) => {
+    const yGreen = yGreenGasolineValues[i] ?? 0;
+    return (gas - yGreen).toFixed(2);
+  });
+
+  const gridCostValues = (() => {
+    const arr = Array(10).fill(mgr);
+    arr[0] = Number(Math.round(mgr * 12).toFixed(2));
+    for (let i = 1; i < 10; i++) {
+      arr[i] = arr[i - 1] * 1.05;
+    }
+    return arr;
+  })();
+
+  const yGreenGridValues = yGreenGasolineValues;
+
+  const gridSavingsPercent = gridCostValues.map((grid, i) => {
+    const yGreen = yGreenGridValues[i] ?? 0;
+    return ((grid - yGreen) / grid * 100).toFixed(2);
+  });
+
+  const gridSavingsDH = gridCostValues.map((grid, i) => {
+    const yGreen = yGreenGridValues[i] ?? 0;
+    return (grid - yGreen).toFixed(2);
+  });
+
+  return {
+    gasoline: { label: "Based upon Gasoline", values: gasolineValues },
+    yGreenGasoline: { label: "Y-Green Gasoline", values: yGreenGasolineValues },
+    gasolineSavingsPercent: { label: "Savings in %", values: gasolineSavingsPercent },
+    gasolineSavingsEuro: { label: "Savings in MAD", values: gasolineSavingsEuro },
+    grid: { label: "Based upon Electricity from the grid", values: gridCostValues },
+    yGreenGrid: { label: "Y-Green Electricity", values: yGreenGridValues },
+    gridSavingsPercent: { label: "Savings in %", values: gridSavingsPercent },
+    gridSavingsDH: { label: "Savings in MAD", values: gridSavingsDH },
+  };
+}
+
 function Step0({onNext, setPowerOption, powerOption}) {
-  console.log(powerOption);
-  const [yes, setYes] = useState(0) // State untuk menyimpan pilihan Yes/No
   let optionClass = "drop-shadow-sm flex flex-col w-[55%] rounded-xl p-2 py-5 border border-gray-300 cursor-pointer hover:bg-black hover:text-white transition-all duration-300 text-center";
   let selectedOptionClass = "bg-black text-white";
   let [selectedOption, setSelectedOption] = useState(null);
@@ -34,22 +201,7 @@ function Step0({onNext, setPowerOption, powerOption}) {
           Want to find out how much you could save with a Yallagreen solar + battery storage system? Simply select Off-Grid or On-Grid to get started. For precise figures, one of our certified specialist engineers will arrange a site visit.
           </p>
         </div>
-        <div class="mt-5">
-          <p class="mb-2 text-gray-600 text-xl font-semibold text-left">Do you already have PV System?</p>
-          <div class="grid grid-flow-col grid-cols-2">
-            <button 
-              type="button" 
-              class="${yes === 1 ? 'bg-gray-900 text-white' : 'bg-slate-100 text-inherit'} py-2.5 px-6 inline rounded-3xl"
-              onClick=${() => setYes(1)}
-            >Yes</button>
-            <button 
-              type="button" 
-              class="${yes === 0 ? 'bg-gray-900 text-white' : 'bg-slate-100 text-inherit'} py-2.5 px-6 inline rounded-3xl"
-              onClick=${() => setYes(0)}
-            >No</button>
-          </div>
-        </div>
-        <div class="text-gray-600 text-xl font-semibold text-left mt-8">Choose your ideal solution?</div>
+        <div class="text-gray-600 text-xl font-semibold text-left mt-6">Choose your ideal solution?</div>
         </div>
 
         <div class="flex gap-6 justify-center content-center items-center" id="power-option">
@@ -187,7 +339,7 @@ function Step2({ usagePerDay, setUsagePerDay, inflationGas, onPrev, onNext, mark
 
           <div class="input-wrapper flex flex-col gap-2">
             <label for="input-field ">Market price per <b>kWh</b></label>
-            <input type="number" class="${inputClass}" oninput=${(e) => setMarketPriceKwh(e.target.value)} placeholder="0,18" value=${marketPriceKwh} />
+            <input type="number" class="${inputClass}" oninput=${(e) => setMarketPriceKwh(e.target.value)} placeholder="1,2" value=${marketPriceKwh} />
           </div>
 
             <button class="self-end inline-flex items-center gap-2 drop-shadow-md bg-primary text-white px-4 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 transition-all duration-300" id="next-button" onClick=${() => onNext(2)}>Results ${arrowIcon}</button>
@@ -198,97 +350,54 @@ function Step2({ usagePerDay, setUsagePerDay, inflationGas, onPrev, onNext, mark
   `;
 }
 
-function Step3({ usagePerDay, setUsagePerDay, inflationGas, marketPriceGas, marketPriceKwh, setMarketPriceKwh, powerOption, onNext, onPrev }) {
+function Step3({
+  usagePerDay,
+  marketPriceGas,
+  marketPriceKwh,
+  powerOption,
+  onNext,
+  onPrev,
+  leaseMetrics,
+  subsidy,
+  setSubsidy,
+  firstPayment,
+  setFirstPayment,
+  interestRate,
+  setInterestRate,
+  yearsOfLoan,
+  setYearsOfLoan,
+}) {
+  const {
+    monthlyGasCost,
+    monthlyGridCost,
+    dailyKwhPanels,
+    dailyKwhBattery,
+    panelCost,
+    batteryCost,
+    totalInvestment,
+    subsidyAmount,
+    nettoInvestment,
+    firstPaymentAmount,
+    totalFinancialLease,
+    selectedInterest,
+    yearlyFinancialLease,
+    yearlyMaintenance,
+    yearlyInsurance,
+    totalYearlyCosts,
+    monthlyPayment,
+  } = leaseMetrics;
 
-  let [subsidy, setSubsidy] = useState(0.3);
-
-  let interestTable = [
-    {
-      rate: "3%",
-      "6years": 0.191,
-      "7years": 0.167,
-      "8years": 0.149
-    },
-    {
-      rate: "4%",
-      "6years": 0.199,
-      "7years": 0.175,
-      "8years": 0.157
-    },
-    {
-      rate: "5%",
-      "6years": 0.207,
-      "7years": 0.183,
-      "8years": 0.165
-    },
-    {
-      rate: "6%",
-      "6years": 0.215,
-      "7years": 0.191,
-      "8years": 0.173
-    },
-    {
-      rate: "7%",
-      "6years": 0.224,
-      "7years": 0.200,
-      "8years": 0.181
-    }
-  ]
-  let [firstPayment, setFirstPayment] = useState(0.1);
-  let [lastPayment, setLastPayment] = useState(0.15);
-  let [interestRate, setInterestRate] = useState(interestTable[2].rate);
-  let selectedInterest = interestTable.find(opt => opt.rate == interestRate);
-  let [yearsOfLoan, setYearsOfLoan] = useState("6years");
-  let interest = selectedInterest[yearsOfLoan];
-
-  // Menghitung nilai-nilai dasar
-  const dailyKwhPanels = powerOption === "offgrid" ? usagePerDay * 3.6 : usagePerDay;
-  const dailyKwhBattery = dailyKwhPanels * 0.45;
-  const panelCost = dailyKwhPanels * 162.1555;
-  const batteryCost = dailyKwhBattery * 431;
-  const totalInvestment = panelCost + batteryCost;
-  const subsidyAmount = totalInvestment * subsidy;
-  const nettoInvestment = totalInvestment - subsidyAmount;
-  
-  // Menghitung pembayaran
-  const firstPaymentAmount = firstPayment * nettoInvestment;
-  const lastPaymentAmount = lastPayment * nettoInvestment;
-  const totalFinancialLease = nettoInvestment - firstPaymentAmount - lastPaymentAmount;
-  
-  // Menghitung biaya tahunan
-  const yearlyFinancialLease = totalFinancialLease * interest;
-  const yearlyMaintenance = totalInvestment * 0.008;
-  const yearlyInsurance = totalInvestment * 0.005;
-  const totalYearlyCosts = yearlyFinancialLease + yearlyMaintenance + yearlyInsurance;
-  const monthlyPayment = totalYearlyCosts / 12;
-  
-  // Menghitung biaya bulanan bensin
-  const monthlyGasCost = usagePerDay * marketPriceGas * 365/12;
-  
-  // Menghitung biaya bulanan listrik grid
-  const monthlyGridCost = usagePerDay * marketPriceKwh * 365/12;
-
-  globalThis.monthlyGridCost = monthlyGridCost;
-  globalThis.monthlyGasCost = monthlyGasCost;
-  globalThis.monthlyPayment = monthlyPayment;
-  globalThis.monthlyYearlyCosts = totalYearlyCosts;
-  globalThis.monthlySubsidy = subsidyAmount;
-  globalThis.monthlyNettoInvestment = nettoInvestment;
-  globalThis.monthlyFinancialLease = totalFinancialLease;
-  globalThis.monthlyInsurance = yearlyInsurance;
-  globalThis.monthlyMaintenance = yearlyMaintenance;
-  
   return html`
   <button
     class="transition-all duration-300 rotate-180"
-    onClick=${() => { 
-      console.log(powerOption);
-      powerOption === "offgrid" ? onPrev(2) : onPrev(3); 
+    onClick=${() => {
+      powerOption === "offgrid" ? onPrev(2) : onPrev(3);
     }}
   >${arrowIcon}</button>
     <div class="h-fit w-full flex gap-5 justify-between border border-gray-150 shadow-sm p-9 rounded-2xl bg-white">
     <${powerOption === "offgrid" ? offGrid : onGrid}
         monthlyGasCost=${monthlyGasCost}
+        monthlyGridCost=${monthlyGridCost}
         dailyKwhPanels=${dailyKwhPanels}
         usagePerDay=${usagePerDay}
         dailyKwhBattery=${dailyKwhBattery}
@@ -300,17 +409,13 @@ function Step3({ usagePerDay, setUsagePerDay, inflationGas, marketPriceGas, mark
         subsidyAmount=${subsidyAmount}
         interestRate=${interestRate}
         setInterestRate=${setInterestRate}
-        interestTable=${interestTable}
+        interestTable=${INTEREST_TABLE}
         yearsOfLoan=${yearsOfLoan}
         setYearsOfLoan=${setYearsOfLoan}
-        interest=${interest}
         firstPayment=${firstPayment}
         setFirstPayment=${setFirstPayment}
         firstPaymentAmount=${firstPaymentAmount}
         selectedInterest=${selectedInterest}
-        lastPayment=${lastPayment}
-        setLastPayment=${setLastPayment}
-        lastPaymentAmount=${lastPaymentAmount}
         totalFinancialLease=${totalFinancialLease}
         yearlyFinancialLease=${yearlyFinancialLease}
         yearlyMaintenance=${yearlyMaintenance}
@@ -326,115 +431,49 @@ function Step3({ usagePerDay, setUsagePerDay, inflationGas, marketPriceGas, mark
   `
 }
 
-function Step4({ usagePerDay, setUsagePerDay, inflationGas, marketPriceGas, marketPriceKwh, setMarketPriceKwh, onNext, onPrev, powerOption }) {
-
-  const gasolineValues = (() => {
-    const arr = Array(10).fill(globalThis.monthlyGasCost);
-    arr[0] = Math.round(globalThis.monthlyGasCost * 12);
-    for (let i = 1; i < 10; i++) {
-      arr[i] = arr[i-1] * 1.05;
-    }
-    return arr;
-  })();
-
-  const yGreenGasolineValues = (() => {
-    const arr = Array(10).fill(globalThis.monthlyPayment);
-    arr[0] = Math.round(globalThis.monthlyPayment * 12);
-    for (let i = 1; i < 6; i++) {
-      arr[i] = arr[0];
-    }
-    return arr;
-  })();
-
-  const gasolineSavingsPercent = gasolineValues.map((gas, i) => {
-    const yGreen = yGreenGasolineValues[i] ?? 0;
-    return ((gas - yGreen) / gas * 100).toFixed(2);
-  });
-
-  const gasolineSavingsEuro = gasolineValues.map((gas, i) => {
-    const yGreen = yGreenGasolineValues[i] ?? 0;
-    return (gas - yGreen).toFixed(2);
-  });
-  
-  const gridCostValues = (() => {
-    const arr = Array(10).fill(globalThis.monthlyGridCost);
-    arr[0] = Math.round(globalThis.monthlyGridCost * 12).toFixed(2);
-    for (let i = 1; i < 10; i++) {
-      arr[i] = arr[i-1] * 1.05;
-    }
-    return arr;
-  })();
-  
-  const yGreenGridValues = (() => {
-    const arr = Array(10).fill(globalThis.monthlyPayment);
-    arr[0] = Math.round(globalThis.monthlyPayment * 12).toFixed(2);
-    for (let i = 1; i < 6; i++) {
-      arr[i] = arr[0];
-    }
-    return arr;
-  })();
-
-  const gridSavingsPercent = gridCostValues.map((grid, i) => {
-    const yGreen = yGreenGridValues[i] ?? 0;
-    return ((grid - yGreen) / grid * 100).toFixed(2);
-  });
-  
-  const gridSavingsDH = gridCostValues.map((grid, i) => {
-    const yGreen = yGreenGridValues[i] ?? 0;
-    return (grid - yGreen).toFixed(2);
-  });
-
-  const yearlyData = {
-    gasoline: {
-      label: "Based upon Gasoline",
-      values: gasolineValues
-    },
-    yGreenGasoline: {
-      label: "Y-Green Gasoline",
-      values: yGreenGasolineValues
-    },
-    gasolineSavingsPercent: {
-      label: "Savings in %",
-      values: gasolineSavingsPercent
-    },
-    gasolineSavingsEuro: {
-      label: "Savings in euro",
-      values: gasolineSavingsEuro
-    },
-    grid: {
-      label: "Based upon Electricity from the grid",
-      values: gridCostValues
-    },
-    yGreenGrid: {
-      label: "Y-Green Electricity",
-      values: yGreenGridValues
-    },
-    gridSavingsPercent: {
-      label: "Savings in %",
-      values: gridSavingsPercent
-    },
-    gridSavingsDH: {
-      label: "Savings in Euro",
-      values: gridSavingsDH
-    }
-  };
+function Step4({
+  usagePerDay,
+  inflationGas,
+  marketPriceGas,
+  marketPriceKwh,
+  onPrev,
+  powerOption,
+  leaseMetrics,
+  yearsOfLoan,
+}) {
+  const {
+    monthlyPayment,
+    monthlyGasCost,
+    monthlyGridCost,
+    yearlyFinancialLease,
+    yearlyMaintenance,
+    yearlyInsurance,
+    dailyKwhPanels,
+    dailyKwhBattery,
+  } = leaseMetrics;
 
   const chartGasRef = useRef(null);
   const chartGridRef = useRef(null);
 
   useEffect(() => {
+    const data = buildYearlyComparisonData(
+      monthlyGasCost,
+      monthlyGridCost,
+      yearlyFinancialLease,
+      yearlyMaintenance,
+      yearlyInsurance,
+      yearsOfLoan
+    );
     let chartGas = null;
     if (chartGasRef.current) {
-      var options = {
+      var optionsGas = {
         chart: {
           height: 335, type: "area"
         },
         dataLabels: { enabled: false },
         series: [
-          { name: yearlyData.gasoline.label, data: yearlyData.gasoline.values },
-          { name: yearlyData.yGreenGasoline.label, data: yearlyData.yGreenGasoline.values },
-          // { name: yearlyData.gasolineSavingsPercent.label, data: yearlyData.gasolineSavingsPercent.values },
-          // { name: yearlyData.gasolineSavingsEuro.label, data: yearlyData.gasolineSavingsEuro.values }
+          { name: data.gasoline.label, data: data.gasoline.values },
+          { name: data.yGreenGasoline.label, data: data.yGreenGasoline.values },
         ],
         fill: {
           type: "gradient",
@@ -453,25 +492,28 @@ function Step4({ usagePerDay, setUsagePerDay, inflationGas, marketPriceGas, mark
         yaxis: {
           labels: {
             formatter: function(value) {
-              return '€ ' + Number(value).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+              return MAD + ' ' + Number(value).toLocaleString('id-ID', { maximumFractionDigits: 2 });
             }
           }
         },
         tooltip: {
           y: {
             formatter: function(value) {
-              return '€ ' + Number(value).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+              return MAD + ' ' + Number(value).toLocaleString('id-ID', { maximumFractionDigits: 2 });
             }
           }
         }
       };
-      chartGas = new ApexCharts(document.querySelector("#chart-comparison-gas"), options);
-      chartGas.render();
+      const elGas = document.querySelector("#chart-comparison-gas");
+      if (elGas) {
+        chartGas = new ApexCharts(elGas, optionsGas);
+        chartGas.render();
+      }
     }
 
     let chartGrid = null;
-    if(chartGridRef.current) {
-      var options = {
+    if (chartGridRef.current) {
+      var optionsGrid = {
         chart: {
           height: 380,
           type: "area"
@@ -481,21 +523,13 @@ function Step4({ usagePerDay, setUsagePerDay, inflationGas, marketPriceGas, mark
         },
         series: [
           {
-            name: yearlyData.grid.label,
-            data: yearlyData.grid.values
+            name: data.grid.label,
+            data: data.grid.values
           },
           {
-            name: yearlyData.yGreenGrid.label,
-            data: yearlyData.yGreenGrid.values
+            name: data.yGreenGrid.label,
+            data: data.yGreenGrid.values
           },
-          // {
-          //   name: yearlyData.gridSavingsPercent.label,
-          //   data: yearlyData.gridSavingsPercent.values
-          // },
-          // {
-          //   name: yearlyData.gridSavingsDH.label,
-          //   data: yearlyData.gridSavingsDH.values
-          // }
         ],
         fill: {
           type: "gradient",
@@ -514,27 +548,48 @@ function Step4({ usagePerDay, setUsagePerDay, inflationGas, marketPriceGas, mark
         yaxis: {
           labels: {
             formatter: function(value) {
-              return '€ ' + Number(value).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+              return MAD + ' ' + Number(value).toLocaleString('id-ID', { maximumFractionDigits: 2 });
             }
           }
         },
         tooltip: {
           y: {
             formatter: function(value) {
-              return '€ ' + Number(value).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+              return MAD + ' ' + Number(value).toLocaleString('id-ID', { maximumFractionDigits: 2 });
             }
           }
         }
       };
 
-      chartGrid = new ApexCharts(document.querySelector("#chart-comparison-grid"), options);
-      chartGrid.render();      
+      const elGrid = document.querySelector("#chart-comparison-grid");
+      if (elGrid) {
+        chartGrid = new ApexCharts(elGrid, optionsGrid);
+        chartGrid.render();
+      }
     }
       return () => {
         if (chartGas) chartGas.destroy();
         if (chartGrid) chartGrid.destroy();
       }
-  }, []);
+  }, [
+    monthlyPayment,
+    monthlyGasCost,
+    monthlyGridCost,
+    yearlyFinancialLease,
+    yearlyMaintenance,
+    yearlyInsurance,
+    yearsOfLoan,
+    powerOption,
+  ]);
+
+  const gasBarPct =
+    monthlyGasCost > 0
+      ? Math.min(100, (monthlyPayment / monthlyGasCost) * 100)
+      : 0;
+  const gridBarPct =
+    monthlyGridCost > 0
+      ? Math.min(100, (monthlyPayment / monthlyGridCost) * 100)
+      : 0;
 
   return html`
   <button
@@ -547,7 +602,7 @@ function Step4({ usagePerDay, setUsagePerDay, inflationGas, marketPriceGas, mark
   <div class="flex flex-col gap-5 border border-gray-150 shadow-sm p-4 px-4 rounded-2xl bg-white">
     <div class="w-full flex flex-col justify-center">
       <div class="text-center text-gray-800 text-2xl font-semibold">Monthly</div>
-      <span class="text-center text-gray-500">All prices in Euros</span>
+      <span class="text-center text-gray-500">All prices in ${MAD}</span>
     </div>
 
     <div class="h-fit w-full flex gap-5 justify-center">
@@ -562,21 +617,21 @@ function Step4({ usagePerDay, setUsagePerDay, inflationGas, marketPriceGas, mark
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 font-semibold text-gray-700">Gasoline</div>
               <div class="text-right flex-1">
-              <span class="text-gray-500 text-normal font-semibold">€</span> ${Math.round(globalThis.monthlyGasCost).toLocaleString('id-ID')}</div>
+              <span class="text-gray-500 text-normal font-semibold">${MAD}</span> ${Math.round(monthlyGasCost).toLocaleString('id-ID')}</div>
             </div>
             <div class="flex justify-between items-center">
-              <div class="text-left flex-1 font-semibold text-gray-700">Y-Green cost</div>
+            <div class="text-left flex-1 font-semibold text-gray-700">Y-Green cost</div>
               <div class="text-right flex-1">
-              <span class="text-gray-500 text-normal font-semibold">€</span> ${Math.round(globalThis.monthlyPayment).toLocaleString('id-ID')}</div>
+              <span class="text-gray-500 text-normal font-semibold">${MAD}</span> ${Math.round(monthlyPayment).toLocaleString('id-ID')}</div>
             </div>
             <div class="flex justify-between items-center mt-4">
               <div class="text-left flex-1 font-semibold text-gray-700">Savings in %</div>
-              <div class="text-right flex-1">${(Math.round((globalThis.monthlyGasCost - globalThis.monthlyPayment) / globalThis.monthlyGasCost * 100)).toFixed(0)}%</div>
+              <div class="text-right flex-1">${(Math.round((monthlyGasCost - monthlyPayment) / monthlyGasCost * 100)).toFixed(0)}%</div>
             </div>
             <div class="flex justify-between items-center">
-              <div class="text-left flex-1 font-semibold text-gray-700">Savings in Euro</div>
+              <div class="text-left flex-1 font-semibold text-gray-700">Savings in ${MAD}</div>
               <div class="text-right flex-1">
-              <span class="text-gray-500 text-normal font-semibold">€</span> ${Math.round(globalThis.monthlyGasCost - globalThis.monthlyPayment).toLocaleString('id-ID')}
+              <span class="text-gray-500 text-normal font-semibold">${MAD}</span> ${Math.round(monthlyGasCost - monthlyPayment).toLocaleString('id-ID')}
               </div>
             </div>
           </div> <!-- end of based upon gasoline -->` 
@@ -588,21 +643,21 @@ function Step4({ usagePerDay, setUsagePerDay, inflationGas, marketPriceGas, mark
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 font-semibold text-gray-700">Grid costs</div>
             <div class="text-right flex-1">
-            <span class="text-gray-500 text-normal font-semibold">€</span> ${Math.round(globalThis.monthlyGridCost).toLocaleString('id-ID')}</div>
+            <span class="text-gray-500 text-normal font-semibold">${MAD}</span> ${Math.round(monthlyGridCost).toLocaleString('id-ID')}</div>
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 font-semibold text-gray-700">Y-Green cost</div>
             <div class="text-right flex-1">
-            <span class="text-gray-500 text-normal font-semibold">€</span> ${Math.round(globalThis.monthlyPayment).toLocaleString('id-ID')}</div>
+            <span class="text-gray-500 text-normal font-semibold">${MAD}</span> ${Math.round(monthlyPayment).toLocaleString('id-ID')}</div>
           </div>
           <div class="flex justify-between items-center mt-4">
             <div class="text-left flex-1 font-semibold text-gray-700">Savings in %</div>
-            <div class="text-right flex-1">${Math.round((globalThis.monthlyGridCost - globalThis.monthlyPayment) / globalThis.monthlyGridCost * 100).toFixed(0)}%</div>
+            <div class="text-right flex-1">${Math.round((monthlyGridCost - monthlyPayment) / monthlyGridCost * 100).toFixed(0)}%</div>
           </div>
           <div class="flex justify-between items-center">
-            <div class="text-left flex-1 font-semibold text-gray-700">Savings in Euro</div>
+            <div class="text-left flex-1 font-semibold text-gray-700">Savings in ${MAD}</div>
             <div class="text-right flex-1">
-            <span class="text-gray-500 text-normal font-semibold">€</span> ${Math.round((globalThis.monthlyGridCost - globalThis.monthlyPayment)).toLocaleString('id-ID')}</div>
+            <span class="text-gray-500 text-normal font-semibold">${MAD}</span> ${Math.round((monthlyGridCost - monthlyPayment)).toLocaleString('id-ID')}</div>
           </div>
   
         </div> <!-- end of based upon electricity from the grid -->
@@ -623,17 +678,17 @@ function Step4({ usagePerDay, setUsagePerDay, inflationGas, marketPriceGas, mark
                 </div>
                 <div class="text-center mt-4">
                   <p class="text-sm sm:text-base font-bold md:text-[20px]">
-                  <span class="text-gray-500 text-normal font-semibold">€</span> ${Math.round(globalThis.monthlyGasCost).toLocaleString('id-ID')}</p>
+                  <span class="text-gray-500 text-normal font-semibold">${MAD}</span> ${Math.round(monthlyGasCost).toLocaleString('id-ID')}</p>
                   <p class="text-xs sm:text-sm text-[#565E73] font-semibold">Gasoline</p>
                 </div>
               </section>
               <section class="flex flex-col items-center w-1/2 sm:w-auto">
                 <div class="relative bg-gray-300 rounded-3xl w-10 h-[350px]">
-                  <div class="absolute bottom-0 left-0 w-full" style="height: ${(globalThis.monthlyPayment/globalThis.monthlyGasCost * 100)}%; background-color: rgb(0, 64, 250); border-radius: 24px;"></div>
+                  <div class="absolute bottom-0 left-0 w-full" style="height: ${gasBarPct}%; background-color: rgb(0, 64, 250); border-radius: 24px;"></div>
                 </div>
                 <div class="text-center mt-4">
                   <p class="text-sm sm:text-base font-bold md:text-[20px]">
-                  <span class="text-gray-500 text-normal font-semibold">€</span> ${Math.round(globalThis.monthlyPayment).toLocaleString('id-ID')}</p>
+                  <span class="text-gray-500 text-normal font-semibold">${MAD}</span> ${Math.round(monthlyPayment).toLocaleString('id-ID')}</p>
                   <p class="text-xs sm:text-sm text-[#565E73] font-semibold">Y-Green cost</p>
                 </div>
               </section>
@@ -654,17 +709,17 @@ function Step4({ usagePerDay, setUsagePerDay, inflationGas, marketPriceGas, mark
                 </div>
                 <div class="text-center mt-4">
                   <p class="text-sm sm:text-base font-bold md:text-[20px]">
-                  <span class="text-gray-500 text-normal font-semibold">€</span> ${Math.round(globalThis.monthlyGridCost ?? "00").toLocaleString('id-ID')}</p>
+                  <span class="text-gray-500 text-normal font-semibold">${MAD}</span> ${Math.round(monthlyGridCost).toLocaleString('id-ID')}</p>
                   <p class="text-xs sm:text-sm text-[#565E73] font-semibold">Grid Costs</p>
                 </div>
               </section>
               <section class="flex flex-col items-center w-1/2 sm:w-auto">
                 <div class="relative bg-gray-300 rounded-3xl w-10 h-[395px]">
-                  <div class="absolute bottom-0 left-0 w-full" style="height: ${(globalThis.monthlyPayment/globalThis.monthlyGasCost * 120)}%; background-color: rgb(0, 64, 250); border-radius: 24px;"></div>
+                  <div class="absolute bottom-0 left-0 w-full" style="height: ${gridBarPct}%; background-color: rgb(0, 64, 250); border-radius: 24px;"></div>
                 </div>
                 <div class="text-center mt-4">
                   <p class="text-sm sm:text-base font-bold md:text-[20px]">
-                  <span class="text-gray-500 text-normal font-semibold">€</span> ${Math.round(globalThis.monthlyPayment ?? "00").toLocaleString('id-ID')}</p>
+                  <span class="text-gray-500 text-normal font-semibold">${MAD}</span> ${Math.round(monthlyPayment).toLocaleString('id-ID')}</p>
                   <p class="text-xs sm:text-sm text-[#565E73] font-semibold">Y-Green cost</p>
                 </div>
               </section>
@@ -693,14 +748,14 @@ function Step4({ usagePerDay, setUsagePerDay, inflationGas, marketPriceGas, mark
         <div class="flex justify-center items-center space-x-10 mt-4 w-full gap-4">
           <div class="text-center flex flex-col">
             <div>
-              <span class="text-[30px] font-medium">431</span>
+              <span class="text-[30px] font-medium">${Math.round(dailyKwhBattery).toLocaleString("id-ID")}</span>
               <span class="font-bold text-gray-500">kWh</span>
             </div>
             <span>Daily need KWh Battery capacity</span>
           </div>
           <div class="text-center flex flex-col">
             <div>
-              <span class="text-[30px] font-medium">162,15</span>
+              <span class="text-[30px] font-medium">${Math.round(dailyKwhPanels).toLocaleString("id-ID")}</span>
               <span class="font-bold text-gray-500">kWh</span>
             </div>
             <span>Daily need KWh EV panels</span>
@@ -754,7 +809,7 @@ function Form(){
 
 function offGrid(props){
   const {
-    monthlyGasCost, dailyKwhPanels, dailyKwhBattery, panelCost, batteryCost, totalInvestment, selectedInterest, subsidy, setSubsidy, subsidyAmount, interestRate, setInterestRate, interestTable, yearsOfLoan, setYearsOfLoan, interest, firstPayment, setFirstPayment, firstPaymentAmount, lastPayment, setLastPayment, lastPaymentAmount, totalFinancialLease, yearlyFinancialLease, yearlyMaintenance, yearlyInsurance, totalYearlyCosts, monthlyPayment, nettoInvestment
+    monthlyGasCost, dailyKwhPanels, dailyKwhBattery, panelCost, batteryCost, totalInvestment, selectedInterest, subsidy, setSubsidy, subsidyAmount, interestRate, setInterestRate, interestTable, yearsOfLoan, setYearsOfLoan, firstPayment, setFirstPayment, firstPaymentAmount, totalFinancialLease, yearlyFinancialLease, yearlyMaintenance, yearlyInsurance, totalYearlyCosts, monthlyPayment, nettoInvestment
   } = props;
 
   return html`
@@ -766,12 +821,12 @@ function offGrid(props){
           </div>
           <div class="text-gray-900 text-3xl flex justify-between">
             <div class="flex font-bold flex-end gap-1">
-              <span class="text-gray-500 text-lg self-end">€ </span>
+              <span class="text-gray-500 text-lg self-end">${MAD} </span>
               <span class="text-gray-900 text-3xl self-end leading-[0.9em]">${Math.round(monthlyGasCost).toLocaleString('id-ID')}</span>
               <span class="text-gray-500 text-sm font-normal self-end">/month</span>
             </div>
             <div class="flex font-bold flex-end gap-1">
-              <span class="text-gray-500 text-lg self-end">€ </span>
+              <span class="text-gray-500 text-lg self-end">${MAD} </span>
               <span class="text-gray-900 text-3xl self-end leading-[0.9em]">${Math.round(monthlyPayment).toLocaleString('id-ID')}</span>
               <span class="text-gray-500 text-sm font-normal self-end">/month</span>
             </div>
@@ -790,12 +845,12 @@ function offGrid(props){
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 font-semibold">Price EV panels per KWh</div>
               <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal">€ </span>162,15</div>
+              <span class="text-gray-500 text-normal">${MAD} </span>1625</div>
             </div>
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 font-semibold">Price Battery per KWh</div>
               <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal">€ </span>431</div>
+              <span class="text-gray-500 text-normal">${MAD} </span>431</div>
             </div>
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 leading-tight text-gray-600">Daily need KWh EV panels</div>
@@ -818,10 +873,14 @@ function offGrid(props){
               <div class="text-right flex-1 font-semibold flex justify-end items-center">
                 <input 
                   type="number" 
-                  disabled
                   class="${tableInputClass} w-[40%]" 
                   placeholder="0" 
-                  oninput=${(e) => setSubsidy(Number(e.target.value) / 100)}
+                  min="0"
+                  max="100"
+                  oninput=${(e) => {
+                    const v = Number(e.target.value);
+                    if (!Number.isNaN(v)) setSubsidy(v / 100);
+                  }}
                   value=${subsidy * 100}
                 />
                 <span class="ml-1">%</span>
@@ -834,9 +893,8 @@ function offGrid(props){
                 <select
                   class="${tableInputClass} w-[40%]"
                   value=${interestRate}
-                  disabled
                   id="rate-int"
-                  onChange=${e => setInterestRate(e.target.value)}
+                  onChange=${(e) => setInterestRate(e.target.value)}
                 >
                   ${interestTable.map(opt => html`
                     <option value=${opt.rate}>${opt.rate}</option>
@@ -852,9 +910,9 @@ function offGrid(props){
                 <select
                   class="${tableInputClass} w-[40%]"
                   id="years-int"
-                  disabled
+                  key=${`years-offgrid-${interestRate}`}
                   value=${yearsOfLoan}
-                  onChange=${e => setYearsOfLoan(e.target.value)}
+                  onChange=${(e) => setYearsOfLoan(e.target.value)}
                 >
                 ${Object.entries(selectedInterest)
                   .filter(([key]) => key !== "rate")
@@ -870,7 +928,7 @@ function offGrid(props){
             </div>
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 leading-tight text-gray-600">Interest</div>
-              <div class="text-right flex-1 font-semibold">${(interest * 100).toFixed(2)}%</div>
+              <div class="text-right flex-1 font-semibold">${formatLeaseFactorPercentLabel(interestRate, yearsOfLoan)}</div>
             </div>
 
           </div>
@@ -883,35 +941,35 @@ function offGrid(props){
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 leading-tight text-gray-600">Solar Panels</div>
               <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal">€ </span>
+              <span class="text-gray-500 text-normal">${MAD} </span>
                 ${Math.round(panelCost).toLocaleString('id-ID')}
               </div>
             </div>
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 leading-tight text-gray-600">Battery</div>
               <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal">€ </span>
+              <span class="text-gray-500 text-normal">${MAD} </span>
                 ${Math.round(batteryCost).toLocaleString('id-ID')}
               </div>
             </div>
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 leading-tight text-gray-600 font-bold">Total investment</div>
               <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal">€ </span>
+              <span class="text-gray-500 text-normal">${MAD} </span>
                 ${Math.round(totalInvestment).toLocaleString('id-ID')}
               </div>
             </div>
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 leading-tight text-gray-600">Subsidy</div>
               <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal">€ </span>
+              <span class="text-gray-500 text-normal">${MAD} </span>
                 ${Math.round(subsidyAmount).toLocaleString('id-ID')}
               </div>
             </div>
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 leading-tight text-gray-600 font-bold">Total netto investment</div>
               <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal">€ </span>
+              <span class="text-gray-500 text-normal">${MAD} </span>
                 ${Math.round(nettoInvestment).toLocaleString('id-ID')}
               </div>
             </div>
@@ -923,76 +981,62 @@ function offGrid(props){
                   type="number" 
                   class="${tableInputClass} w-[35%]" 
                   placeholder="0" 
-                  disabled
-                  oninput=${(e) => setFirstPayment(Number(e.target.value / 100))}
+                  min="0"
+                  max="100"
+                  oninput=${(e) => {
+                    const v = Number(e.target.value);
+                    if (!Number.isNaN(v)) setFirstPayment(v / 100);
+                  }}
                   value=${firstPayment * 100}
                 />
                 <span class="ml-1">%</span>
                 <div class="text-right flex-1 font-semibold">
-                <span class="text-gray-500 text-normal">€ </span>
+                <span class="text-gray-500 text-normal">${MAD} </span>
                   ${Math.round(firstPaymentAmount).toLocaleString('id-ID')}
-                </div>
-              </div>
-            </div>
-            <div class="flex justify-between items-center">
-              <div class="text-left flex-1 leading-tight text-gray-600">Last payment</div>
-              <div class="text-left flex-1 font-semibold flex justify-end items-center">
-                <input 
-                  type="number" 
-                  class="${tableInputClass} w-[35%]" 
-                  placeholder="0" 
-                  disabled
-                  oninput=${(e) => setLastPayment(Number(e.target.value / 100))}
-                  value=${lastPayment * 100}
-                />
-                <span class="ml-1">%</span>
-                <div class="text-right flex-1 font-semibold">
-                <span class="text-gray-500 text-normal">€ </span>
-                  ${Math.round(lastPaymentAmount).toLocaleString('id-ID')}
                 </div>
               </div>
             </div>
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 leading-tight text-gray-600 font-bold">Total financial lease</div>
               <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal">€ </span>
+              <span class="text-gray-500 text-normal">${MAD} </span>
                 ${Math.round(totalFinancialLease).toLocaleString('id-ID')}
               </div>
             </div>
 
             <div class="text-left flex-1 font-semibold">Yearly costs</div>
             <div class="flex justify-between items-center">
-              <div class="text-left flex-1 leading-tight text-gray-600">Financial lease</div>
+              <div class="text-left flex-1 leading-tight text-gray-600">Financing costs</div>
               <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal">€ </span>
+              <span class="text-gray-500 text-normal">${MAD} </span>
                 ${Math.round(yearlyFinancialLease).toLocaleString('id-ID')}
               </div>
             </div>
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 leading-tight text-gray-600">Maintenance & software</div>
               <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal">€ </span>
+              <span class="text-gray-500 text-normal">${MAD} </span>
                 ${Math.round(yearlyMaintenance).toLocaleString('id-ID')}
               </div>
             </div>
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 leading-tight text-gray-600">Insurance</div>
               <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal">€ </span>
+              <span class="text-gray-500 text-normal">${MAD} </span>
                 ${Math.round(yearlyInsurance).toLocaleString('id-ID')}
               </div>
             </div>
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 leading-tight text-gray-600 font-bold">Total yearly costs</div>
               <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal">€ </span>
+              <span class="text-gray-500 text-normal">${MAD} </span>
                 ${Math.round(totalYearlyCosts).toLocaleString('id-ID')}
               </div>
             </div>
             <div class="flex justify-between items-center">
               <div class="text-left flex-1 leading-tight text-gray-600 font-bold">Total monthly costs</div>
               <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal">€ </span>
+              <span class="text-gray-500 text-normal">${MAD} </span>
                 ${Math.round(monthlyPayment).toLocaleString('id-ID')}
               </div>
             </div>
@@ -1003,10 +1047,31 @@ function offGrid(props){
 
 function onGrid(props) {
   const {
-    monthlyGasCost, dailyKwhPanels, usagePerDay, dailyKwhBattery, panelCost, batteryCost, totalInvestment,
-    subsidy, setSubsidy, subsidyAmount, interestRate, setInterestRate, interestTable,
-    yearsOfLoan, setYearsOfLoan, interest, firstPayment, setFirstPayment, firstPaymentAmount,
-    lastPayment, setLastPayment, lastPaymentAmount, totalFinancialLease, yearlyFinancialLease, yearlyMaintenance, selectedInterest, yearlyInsurance, totalYearlyCosts, monthlyPayment, nettoInvestment
+    monthlyGridCost,
+    dailyKwhPanels,
+    dailyKwhBattery,
+    panelCost,
+    batteryCost,
+    totalInvestment,
+    subsidy,
+    setSubsidy,
+    subsidyAmount,
+    interestRate,
+    setInterestRate,
+    interestTable,
+    yearsOfLoan,
+    setYearsOfLoan,
+    firstPayment,
+    setFirstPayment,
+    firstPaymentAmount,
+    totalFinancialLease,
+    yearlyFinancialLease,
+    yearlyMaintenance,
+    selectedInterest,
+    yearlyInsurance,
+    totalYearlyCosts,
+    monthlyPayment,
+    nettoInvestment,
   } = props;
 
   return html`
@@ -1018,26 +1083,18 @@ function onGrid(props) {
       </div>
         <div class="text-gray-900 text-3xl flex justify-between">
           <div class="flex font-bold flex-end gap-1">
-            <span class="text-gray-500 text-lg self-end">€ </span>
+            <span class="text-gray-500 text-lg self-end">${MAD} </span>
             <span class="text-gray-900 text-3xl self-end leading-[0.9em]">${Math.round(monthlyGridCost).toLocaleString('id-ID')}</span>
             <span class="text-gray-500 text-sm font-normal self-end">/month</span>
           </div>
           <div class="flex font-bold flex-end gap-1">
-            <span class="text-gray-500 text-lg self-end">€ </span>
-            <span class="text-gray-900 text-3xl self-end leading-[0.9em]">
-              ${Math.round(
-                (
-                  (((usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy) -
-                    (firstPayment * (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy)) -
-                    (lastPayment * (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy))) *
-                    (interest)
-                  ) +
-                  ((usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * 0.008) +
-                  ((usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * 0.005))/12
-              ).toLocaleString('id-ID')}
-            </span>
+            <span class="text-gray-500 text-lg self-end">${MAD} </span>
+            <span class="text-gray-900 text-3xl self-end leading-[0.9em]">${Math.round(monthlyPayment).toLocaleString('id-ID')}</span>
             <span class="text-gray-500 text-sm font-normal self-end">/month</span>
           </div>
+        </div>
+        <div class="disclaimer-container border border-gray-150 rounded-2xl p-2 text-[0.7em] mt-3 text-gray-500 font-normal">
+            Disclaimer: The figures presented on this website are based on general assumptions and are intended for illustrative purposes only. Actual results may vary depending on individual circumstances and country-specific regulations. Please consult with our team for information tailored to your situation.
         </div>
 
         <div class="border-t border-gray-150 my-5"></div>
@@ -1049,21 +1106,21 @@ function onGrid(props) {
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 font-semibold">Price EV panels per KWh</div>
-            <div class="text-right flex-1 font-semibold"><span class="text-gray-500 text-normal">€ </span>162,15</div>
+            <div class="text-right flex-1 font-semibold"><span class="text-gray-500 text-normal">${MAD} </span>1.625</div>
           </div>
 
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 font-semibold">Price Battery per KWh</div>
             <div class="text-right flex-1 font-semibold">
-            <span class="text-gray-500 text-normal">€ </span>431</div>
+            <span class="text-gray-500 text-normal">${MAD} </span>431</div>
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600">Daily need KWh EV panels</div>
-            <div class="text-right flex-1 font-semibold">${usagePerDay}</div>
+            <div class="text-right flex-1 font-semibold">${Math.round(dailyKwhPanels)}</div>
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600">Daily need KWh battery capacity</div>
-            <div class="text-right flex-1 font-semibold">${Math.ceil(usagePerDay * 0.45)}</div>
+            <div class="text-right flex-1 font-semibold">${Math.round(dailyKwhBattery)}</div>
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600">Installation costs</div>
@@ -1080,8 +1137,12 @@ function onGrid(props) {
                 type="number" 
                 class="${tableInputClass} w-[40%]" 
                 placeholder="0" 
-                disabled
-                oninput=${(e) => setSubsidy(Number(e.target.value) / 100)}
+                min="0"
+                max="100"
+                oninput=${(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isNaN(v)) setSubsidy(v / 100);
+                }}
                 value=${subsidy * 100}
               />
               <span class="ml-1">%</span>
@@ -1094,9 +1155,8 @@ function onGrid(props) {
               <select
                 class="${tableInputClass} w-[40%]"
                 value=${interestRate}
-                disabled
-                id="rate-int"
-                onChange=${e => setInterestRate(e.target.value)}
+                id="rate-int-ongrid"
+                onChange=${(e) => setInterestRate(e.target.value)}
               >
                 ${interestTable.map(opt => html`
                   <option value=${opt.rate}>${opt.rate}</option>
@@ -1111,10 +1171,10 @@ function onGrid(props) {
             <div class="text-right flex-1 font-semibold flex justify-end items-center">
               <select
                 class="${tableInputClass} w-[40%]"
-                id="years-int"
+                id="years-int-ongrid"
+                key=${`years-ongrid-${interestRate}`}
                 value=${yearsOfLoan}
-                disabled
-                onChange=${e => setYearsOfLoan(e.target.value)}
+                onChange=${(e) => setYearsOfLoan(e.target.value)}
               >
           ${Object.entries(selectedInterest)
               .filter(([key]) => key !== "rate")
@@ -1130,7 +1190,7 @@ function onGrid(props) {
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600">Interest</div>
-            <div class="text-right flex-1 font-semibold">${(interest * 100).toFixed(2)}%</div>
+            <div class="text-right flex-1 font-semibold">${formatLeaseFactorPercentLabel(interestRate, yearsOfLoan)}</div>
           </div>
         </div>
 
@@ -1142,32 +1202,32 @@ function onGrid(props) {
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600">Solar Panels</div>
             <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal font-normal">€ </span> ${Math.ceil(usagePerDay * 162.1555).toLocaleString('id-ID')}
+              <span class="text-gray-500 text-normal font-normal">${MAD} </span> ${Math.round(panelCost).toLocaleString('id-ID')}
             </div>
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600">Battery</div>
             <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal font-normal">€ </span> ${Math.ceil(usagePerDay * 0.45 * 431).toLocaleString('id-ID')}
+              <span class="text-gray-500 text-normal font-normal">${MAD} </span> ${Math.round(batteryCost).toLocaleString('id-ID')}
             </div>
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600 font-bold">Total investment</div>
             <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal font-normal">€ </span> ${Math.round(usagePerDay * 162.1555 + usagePerDay * 0.45 * 431).toLocaleString('id-ID')}
+              <span class="text-gray-500 text-normal font-normal">${MAD} </span> ${Math.round(totalInvestment).toLocaleString('id-ID')}
             </div>
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600">Subsidy</div>
             <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal font-normal">€ </span> ${Math.round((usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy).toLocaleString('id-ID')}
+              <span class="text-gray-500 text-normal font-normal">${MAD} </span> ${Math.round(subsidyAmount).toLocaleString('id-ID')}
             </div>
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600 font-bold">Total netto investment</div>
             <div class="text-right flex-1 font-semibold"> 
-            <span class="text-gray-500 text-normal font-normal">€ </span>
-            ${Math.round(usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy).toLocaleString('id-ID')}
+            <span class="text-gray-500 text-normal font-normal">${MAD} </span>
+            ${Math.round(nettoInvestment).toLocaleString('id-ID')}
             </div>
           </div>
           <div class="text-left flex-1 font-semibold">Investment</div>
@@ -1177,105 +1237,64 @@ function onGrid(props) {
               <input 
                 type="number" 
                 class="${tableInputClass} w-[35%]" 
-                disabled
                 placeholder="0" 
-                oninput=${(e) => setFirstPayment(Number(e.target.value / 100))}
+                min="0"
+                max="100"
+                oninput=${(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isNaN(v)) setFirstPayment(v / 100);
+                }}
                 value=${firstPayment * 100}
               />
               <span class="ml-1">%</span>
             </div>
             <div class="text-right flex-1 font-semibold">
-            <span class="text-gray-500 text-normal font-normal">€ </span>
-            ${Math.round(firstPayment * (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy)).toLocaleString('id-ID')}
+            <span class="text-gray-500 text-normal font-normal">${MAD} </span>
+            ${Math.round(firstPaymentAmount).toLocaleString('id-ID')}
             </div>
-          </div>
-          <div class="flex justify-between items-center">
-            <div class="text-left flex-1 leading-tight text-gray-600">Last payment</div>
-            <div class="text-left flex-1 font-semibold flex justify-end items-center">
-              <input 
-                type="number" 
-                class="${tableInputClass} w-[35%]" 
-                disabled
-                placeholder="0" 
-                oninput=${(e) => setLastPayment(Number(e.target.value / 100))}
-                value=${lastPayment * 100}
-              />
-              <span class="ml-1">%</span>
-            </div>
-            <div class="text-right flex-1 font-semibold">
-            <span class="text-gray-500 text-normal font-normal">€ </span>
-            ${Math.round(lastPayment * (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy)).toLocaleString('id-ID')}
-                </div>
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600 font-bold">Total financial lease</div>
             <div class="text-right flex-1 font-semibold">
-            <span class="text-gray-500 text-normal font-normal">€ </span>
-            ${Math.round(
-                (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy) -
-                (firstPayment * (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy)) -
-                (lastPayment * (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy))
-              ).toLocaleString('id-ID')}
+            <span class="text-gray-500 text-normal font-normal">${MAD} </span>
+            ${Math.round(totalFinancialLease).toLocaleString('id-ID')}
             </div>
           </div>
 
           <div class="text-left flex-1 font-semibold">Yearly costs</div>
           <div class="flex justify-between items-center">
-            <div class="text-left flex-1 leading-tight text-gray-600">Financial lease</div>
+            <div class="text-left flex-1 leading-tight text-gray-600">Financing costs</div>
             <div class="text-right flex-1 font-semibold">
-            <span class="text-gray-500 text-normal font-normal">€ </span>
-            ${
-                Math.round(
-                ((usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy) -
-                (firstPayment * (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy)) -
-                (lastPayment * (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy))) *
-                (interest)
-              ).toLocaleString('id-ID')}
+            <span class="text-gray-500 text-normal font-normal">${MAD} </span>
+            ${Math.round(yearlyFinancialLease).toLocaleString('id-ID')}
             </div>
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600">Maintenance & software</div>
             <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal font-normal">€ </span>
-              ${Math.round((usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * 0.008).toLocaleString('id-ID')}
+              <span class="text-gray-500 text-normal font-normal">${MAD} </span>
+              ${Math.round(yearlyMaintenance).toLocaleString('id-ID')}
             </div>
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600">Insurance</div>
             <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal font-normal">€ </span>
-              ${Math.round((usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * 0.005).toLocaleString('id-ID')}            </div>
+              <span class="text-gray-500 text-normal font-normal">${MAD} </span>
+              ${Math.round(yearlyInsurance).toLocaleString('id-ID')}
+            </div>
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600 font-bold">Total yearly costs</div>
             <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal font-normal">€ </span>
-              ${Math.round(
-                (
-                  ((usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy) -
-                  (firstPayment * (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy)) -
-                  (lastPayment * (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy))) *
-                  (interest)
-                ) +
-                ((usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * 0.008) +
-                ((usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * 0.005)
-              ).toLocaleString('id-ID')}
+              <span class="text-gray-500 text-normal font-normal">${MAD} </span>
+              ${Math.round(totalYearlyCosts).toLocaleString('id-ID')}
             </div>
           </div>
           <div class="flex justify-between items-center">
             <div class="text-left flex-1 leading-tight text-gray-600 font-bold">Total monthly costs</div>
             <div class="text-right flex-1 font-semibold">
-              <span class="text-gray-500 text-normal font-normal">€ </span>
-              ${Math.round(
-                (
-                  (((usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy) -
-                    (firstPayment * (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy)) -
-                    (lastPayment * (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431 - (usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * subsidy))) *
-                    (interest)
-                  ) +
-                  ((usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * 0.008) +
-                  ((usagePerDay * 162.1555 + usagePerDay * 0.45 * 431) * 0.005))/12
-              ).toLocaleString('id-ID')}
+              <span class="text-gray-500 text-normal font-normal">${MAD} </span>
+              ${Math.round(monthlyPayment).toLocaleString('id-ID')}
             </div>
           </div>
         </div>
@@ -1285,14 +1304,42 @@ function onGrid(props) {
 }
 
 function App(props) {
-  const [usagePerDay, setUsagePerDay]   = useState(250);
+  const [usagePerDay, setUsagePerDay]   = useState(900);
   const [inflationGas, setInflationGas] = useState(0.05);
   const [marketPriceGas, setMarketPriceGas] = useState(1.2);
-  const [marketPriceKwh, setMarketPriceKwh] = useState(0.18);
+  const [marketPriceKwh, setMarketPriceKwh] = useState(1.2);
+  const [subsidy, setSubsidy] = useState(0.3);
+  const [firstPayment, setFirstPayment] = useState(0.05);
+  const [interestRate, setInterestRate] = useState("3%");
+  const [yearsOfLoan, setYearsOfLoan] = useState("6years");
   const [step, setStep] = useState(0);
   const [anim, setAnim] = useState("");
   const [powerOption, setPowerOption] = useState(null);
   const [pendingStep, setPendingStep] = useState(null);
+
+  const leaseMetrics = useMemo(
+    () =>
+      computeLeaseMetrics({
+        usagePerDay,
+        marketPriceGas,
+        marketPriceKwh,
+        powerOption: powerOption ?? "ongrid",
+        subsidy,
+        firstPayment,
+        interestRate,
+        yearsOfLoan,
+      }),
+    [
+      usagePerDay,
+      marketPriceGas,
+      marketPriceKwh,
+      powerOption,
+      subsidy,
+      firstPayment,
+      interestRate,
+      yearsOfLoan,
+    ]
+  );
 
   function handleNext(step = null) {
     console.log(step);
@@ -1350,23 +1397,28 @@ function App(props) {
             />`
       case 3: return html`<${Step3}
               usagePerDay=${usagePerDay}
-              setUsagePerDay=${setUsagePerDay}
-              inflationGas=${inflationGas}
               marketPriceGas=${marketPriceGas}
               marketPriceKwh=${marketPriceKwh}
               powerOption=${powerOption}
               onNext=${handleNext}
               onPrev=${handlePrev}
+              leaseMetrics=${leaseMetrics}
+              subsidy=${subsidy}
+              setSubsidy=${setSubsidy}
+              firstPayment=${firstPayment}
+              setFirstPayment=${setFirstPayment}
+              interestRate=${interestRate}
+              setInterestRate=${setInterestRate}
+              yearsOfLoan=${yearsOfLoan}
+              setYearsOfLoan=${setYearsOfLoan}
             />`
       case 4: return html`<${Step4}
-              usagePerDay=${usagePerDay}
-              setUsagePerDay=${setUsagePerDay}
-              inflationGas=${inflationGas}
               marketPriceGas=${marketPriceGas}
               marketPriceKwh=${marketPriceKwh}
-              onNext=${handleNext}
               onPrev=${handlePrev}
               powerOption=${powerOption}
+              leaseMetrics=${leaseMetrics}
+              yearsOfLoan=${yearsOfLoan}
       />`
     }
   }
