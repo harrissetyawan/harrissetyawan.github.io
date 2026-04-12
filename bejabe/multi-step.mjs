@@ -591,6 +591,28 @@ function Step4({
       ? Math.min(100, (monthlyPayment / monthlyGridCost) * 100)
       : 0;
 
+  const gridCostsHidden =
+    powerOption === "offgrid"
+      ? Math.round(monthlyGasCost)
+      : Math.round(monthlyGridCost);
+  const yGreenCostHidden = Math.round(monthlyPayment);
+  const savingsPercentHidden =
+    powerOption === "offgrid"
+      ? monthlyGasCost > 0
+        ? Math.round(
+            ((monthlyGasCost - monthlyPayment) / monthlyGasCost) * 100
+          )
+        : 0
+      : monthlyGridCost > 0
+        ? Math.round(
+            ((monthlyGridCost - monthlyPayment) / monthlyGridCost) * 100
+          )
+        : 0;
+  const savingsMadHidden =
+    powerOption === "offgrid"
+      ? Math.round(monthlyGasCost - monthlyPayment)
+      : Math.round(monthlyGridCost - monthlyPayment);
+
   return html`
   <button
     class="transition-all duration-300 rotate-180"
@@ -763,42 +785,56 @@ function Step4({
         </div>
       </div> <!-- end of blue circle -->
 
-      <${Form} />
+      <${Form}
+        gridCosts=${gridCostsHidden}
+        yGreenCost=${yGreenCostHidden}
+        savingsPercent=${savingsPercentHidden}
+        savingsMad=${savingsMadHidden}
+      />
     </div>
 
   </div>
   `;
 }
 
-function Form(){
+function Form({
+  gridCosts,
+  yGreenCost,
+  savingsPercent,
+  savingsMad,
+}) {
   return html`
   
   <div class="w-[80%] flex flex-col gap-5 border border-gray-150 shadow-sm p-4 px-4 rounded-2xl bg-white">
     <div class="w-full flex flex-col justify-center">
       <div class="flex flex-col gap-2">
+        <input type="hidden" name="grid_costs" value=${String(gridCosts)} />
+        <input type="hidden" name="y_green_cost" value=${String(yGreenCost)} />
+        <input type="hidden" name="savings_percent" value=${String(savingsPercent)} />
+        <input type="hidden" name="savings_mad" value=${String(savingsMad)} />
         <div class="flex gap-2">
           <div class="flex flex-col gap-2 w-full">
-            <label for="name" class="text-gray-700 font-semibold text-sm leading-tight">First Name</label>
-            <input type="text" class="${inputClass}" id="name" name="name" />
+            <label for="first_name" class="text-gray-700 font-semibold text-sm leading-tight">First Name</label>
+            <input type="text" class="${inputClass}" id="first_name" name="first_name" />
           </div>              
           <div class="flex flex-col gap-2 w-full">
-            <label for="name" class="text-gray-700 font-semibold text-sm leading-tight">Last Name</label>
-            <input type="text" class="${inputClass}" id="name" name="name" />
+            <label for="last_name" class="text-gray-700 font-semibold text-sm leading-tight">Last Name</label>
+            <input type="text" class="${inputClass}" id="last_name" name="last_name" />
           </div>
         </div>
 
         <div class="flex flex-col gap-2">
-          <label for="name" class="text-gray-700 font-semibold text-sm leading-tight">Phone Number</label>
-          <input type="tel" class="${inputClass}" id="name" name="name" />
+          <label for="phone" class="text-gray-700 font-semibold text-sm leading-tight">Phone Number</label>
+          <input type="tel" class="${inputClass}" id="phone" name="phone" />
         </div>
 
         <div class="flex flex-col gap-2">
-          <label for="name" class="text-gray-700 font-semibold text-sm leading-tight">Email</label>
-          <input type="email" class="${inputClass}" id="name" name="name" />
+          <label for="email" class="text-gray-700 font-semibold text-sm leading-tight">Email</label>
+          <input type="email" class="${inputClass}" id="email" name="email" />
         </div>
 
         <div class="flex flex-col gap-2">
-          <button class="self-end inline-flex items-center gap-2 drop-shadow-md bg-primary text-white px-4 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 transition-all duration-300" id="next-button" type="submit">Send ${arrowIcon}</button>
+          <button class="self-end inline-flex items-center gap-2 drop-shadow-md bg-primary text-white px-4 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 transition-all duration-300" id="contact-send-button" type="button">Send ${arrowIcon}</button>
         </div>
 
       </div>
