@@ -808,29 +808,29 @@ function Form({
   <div class="w-[80%] flex flex-col gap-5 border border-gray-150 shadow-sm p-4 px-4 rounded-2xl bg-white">
     <div class="w-full flex flex-col justify-center">
       <div class="flex flex-col gap-2">
-        <input type="hidden" name="grid_costs" value=${String(gridCosts)} />
-        <input type="hidden" name="y_green_cost" value=${String(yGreenCost)} />
-        <input type="hidden" name="savings_percent" value=${String(savingsPercent)} />
-        <input type="hidden" name="savings_mad" value=${String(savingsMad)} />
+        <input type="hidden" name="Grid costs (MAD)" value=${String(gridCosts)} />
+        <input type="hidden" name="Y-Green cost (MAD)" value=${String(yGreenCost)} />
+        <input type="hidden" name="Savings in %" value=${String(savingsPercent)} />
+        <input type="hidden" name="Savings in MAD" value=${String(savingsMad)} />
         <div class="flex gap-2">
           <div class="flex flex-col gap-2 w-full">
             <label for="first_name" class="text-gray-700 font-semibold text-sm leading-tight">First Name</label>
-            <input type="text" class="${inputClass}" id="first_name" name="first_name" />
+            <input type="text" class="${inputClass}" id="first_name" name="First Name" />
           </div>              
           <div class="flex flex-col gap-2 w-full">
             <label for="last_name" class="text-gray-700 font-semibold text-sm leading-tight">Last Name</label>
-            <input type="text" class="${inputClass}" id="last_name" name="last_name" />
+            <input type="text" class="${inputClass}" id="last_name" name="Last Name" />
           </div>
         </div>
 
         <div class="flex flex-col gap-2">
           <label for="phone" class="text-gray-700 font-semibold text-sm leading-tight">Phone Number</label>
-          <input type="tel" class="${inputClass}" id="phone" name="phone" />
+          <input type="tel" class="${inputClass}" id="phone" name="Phone Number" />
         </div>
 
         <div class="flex flex-col gap-2">
           <label for="email" class="text-gray-700 font-semibold text-sm leading-tight">Email</label>
-          <input type="email" class="${inputClass}" id="email" name="email" />
+          <input type="email" class="${inputClass}" id="email" name="Email" />
         </div>
 
         <div class="flex flex-col gap-2">
