@@ -218,6 +218,8 @@
                 sortBy: 'sales',
                 requestId: 0,
                 activeController: null,
+                diagnostics: null,
+                diagnosticsCopied: false,
 
                 get sortedProducts() {
                     const key = this.sortBy;
@@ -247,13 +249,18 @@
                         if (url.protocol !== 'http:' && url.protocol !== 'https:') {
                             return null;
                         }
-                        url.pathname = `${url.pathname.replace(/\/+$/, '')}/api/search`;
-                        url.search = new URLSearchParams({
-                            term: this.searchTerm.trim(),
-                            sortBy: this.searchOptions.sortBy,
-                            department: this.searchOptions.department,
-                            pageSize: this.searchOptions.pageSize,
-                        }).toString();
+                        const basePath = url.pathname.replace(/\/+$/, '');
+                        url.pathname = /\/api\/search$/.test(basePath)
+                            ? basePath
+                            : `${basePath}/api/search`;
+                        // Keep the exact encoding used by the original tool (%20 for spaces).
+                        // Some lightweight workers parse the raw query string instead of URLSearchParams.
+                        url.search = [
+                            `term=${encodeURIComponent(this.searchTerm.trim())}`,
+                            `sortBy=${encodeURIComponent(this.searchOptions.sortBy)}`,
+                            `department=${encodeURIComponent(this.searchOptions.department)}`,
+                            `pageSize=${encodeURIComponent(this.searchOptions.pageSize)}`,
+                        ].join('&');
                         url.hash = '';
                         return url.toString();
                     } catch (error) {
@@ -261,27 +268,55 @@
                     }
                 },
 
-                async readErrorMessage(response) {
+                get diagnosticsText() {
+                    if (!this.diagnostics) {
+                        return '';
+                    }
+                    const diagnostics = this.diagnostics;
+                    const keys = Array.isArray(diagnostics.receivedKeys) && diagnostics.receivedKeys.length
+                        ? diagnostics.receivedKeys.join(', ')
+                        : '(none)';
+                    return [
+                        `Request URL: ${diagnostics.requestUrl}`,
+                        `HTTP status: ${diagnostics.status == null ? 'no response' : diagnostics.status}`,
+                        `Products parsed: ${diagnostics.productCount}`,
+                        `Top-level response keys: ${keys}`,
+                        `Response preview: ${diagnostics.responseSnippet || '(empty body)'}`,
+                    ].join('\n');
+                },
+
+                extractErrorMessage(text, status) {
                     let detail = '';
-                    try {
-                        const text = await response.text();
-                        if (text) {
-                            try {
-                                const parsed = JSON.parse(text);
-                                detail = parsed && typeof parsed === 'object'
-                                    ? String(parsed.error || parsed.message || '')
-                                    : '';
-                            } catch (error) {
-                                detail = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
-                            }
+                    if (text) {
+                        try {
+                            const parsed = JSON.parse(text);
+                            detail = parsed && typeof parsed === 'object'
+                                ? String(parsed.error || parsed.message || '')
+                                : '';
+                        } catch (error) {
+                            detail = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
                         }
-                    } catch (error) {
-                        // Ignore body read errors and fall back to the status code.
                     }
 
                     return detail
-                        ? `${detail} (Status: ${response.status})`
-                        : `Network response error (Status: ${response.status})`;
+                        ? `${detail} (Status: ${status})`
+                        : `Network response error (Status: ${status})`;
+                },
+
+                async copyDiagnostics() {
+                    const text = this.diagnosticsText;
+                    if (!text) {
+                        return;
+                    }
+                    try {
+                        await navigator.clipboard.writeText(text);
+                        this.diagnosticsCopied = true;
+                        setTimeout(() => {
+                            this.diagnosticsCopied = false;
+                        }, 2000);
+                    } catch (error) {
+                        console.error('Could not copy diagnostics:', error);
+                    }
                 },
 
                 pickTopProduct(data, products) {
@@ -307,6 +342,7 @@
                 async search() {
                     this.initialLoad = false;
                     this.error = null;
+                    this.diagnostics = null;
                     this.abortActiveRequest();
                     this.loading = false;
                     const requestId = ++this.requestId;
@@ -336,6 +372,13 @@
                     this.market = { saturation: 0 };
                     this.view = 'products';
                     this.sortBy = 'sales';
+                    this.diagnostics = {
+                        requestUrl: fetchUrl,
+                        status: null,
+                        productCount: 0,
+                        receivedKeys: [],
+                        responseSnippet: '(no response received)',
+                    };
 
                     const timeoutId = setTimeout(() => {
                         if (this.activeController === controller) {
@@ -348,25 +391,49 @@
                             signal: controller.signal,
                             headers: { Accept: 'application/json' },
                         });
-
-                        if (!response.ok) {
-                            throw new Error(await this.readErrorMessage(response));
-                        }
-
-                        let data;
-                        try {
-                            data = await response.json();
-                        } catch (error) {
-                            throw new Error('The backend returned a response that is not valid JSON');
-                        }
+                        const rawText = await response.text();
 
                         if (requestId !== this.requestId) {
                             return;
                         }
 
-                        const products = Array.isArray(data && data.products)
-                            ? data.products.map((product, index) => normalizeProduct(product, index))
-                            : [];
+                        this.diagnostics = {
+                            requestUrl: fetchUrl,
+                            status: response.status,
+                            productCount: 0,
+                            receivedKeys: [],
+                            responseSnippet: rawText.replace(/\s+/g, ' ').trim().slice(0, 500),
+                        };
+
+                        if (!response.ok) {
+                            throw new Error(this.extractErrorMessage(rawText, response.status));
+                        }
+
+                        let data;
+                        try {
+                            data = JSON.parse(rawText);
+                        } catch (error) {
+                            throw new Error('The backend returned a response that is not valid JSON');
+                        }
+
+                        const rawProducts = Array.isArray(data)
+                            ? data
+                            : data && Array.isArray(data.products)
+                                ? data.products
+                                : [];
+                        const products = rawProducts.map(
+                            (product, index) => normalizeProduct(product, index)
+                        );
+
+                        this.diagnostics = {
+                            ...this.diagnostics,
+                            productCount: products.length,
+                            receivedKeys: Array.isArray(data)
+                                ? ['(array response)']
+                                : data && typeof data === 'object'
+                                    ? Object.keys(data)
+                                    : [],
+                        };
 
                         this.products = products;
                         this.analysis = normalizeAnalysis(data && data.analysis);
@@ -374,7 +441,7 @@
                         this.topProduct = this.pickTopProduct(data, products);
 
                         if (!products.length) {
-                            this.error = 'No products found for this search term. Try something broader.';
+                            this.error = 'No products found. The backend returned an empty products list. Open "Show debug details" below to inspect the response.';
                         }
                     } catch (error) {
                         if (requestId !== this.requestId) {
@@ -541,7 +608,21 @@
                         <path stroke-linecap="round" stroke-linejoin="round"
                             d="M12 9v3.75m0 3.75h.008v.008H12v-.008zM10.34 3.94l-8.4 14.55A1.5 1.5 0 003.24 21h17.52a1.5 1.5 0 001.3-2.51l-8.4-14.55a1.5 1.5 0 00-2.6 0z" />
                     </svg>
-                    <p class="text-sm leading-relaxed" x-text="error"></p>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm leading-relaxed" x-text="error"></p>
+                        <details x-show="diagnostics" class="mt-3">
+                            <summary class="cursor-pointer text-xs font-semibold underline">Show debug details</summary>
+                            <pre
+                                class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-black/30 p-3 text-xs text-gray-100"
+                                x-text="diagnosticsText"></pre>
+                            <div class="mt-2 flex items-center gap-3">
+                                <button type="button" @click="copyDiagnostics()"
+                                    class="text-xs font-semibold underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded">Copy
+                                    debug info</button>
+                                <span x-show="diagnosticsCopied" class="text-xs text-green-300">Copied</span>
+                            </div>
+                        </details>
+                    </div>
                 </div>
             </div>
         </template>
