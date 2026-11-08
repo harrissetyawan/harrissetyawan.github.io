@@ -376,6 +376,7 @@
                 suggestions: [],
                 source: null,
                 keywordMode: 'tags',
+                keywordsCopied: false,
                 sortBy: 'sales',
                 requestId: 0,
                 activeController: null,
@@ -619,6 +620,7 @@
                     this.view = 'products';
                     this.sortBy = 'sales';
                     this.keywordMode = 'tags';
+                    this.keywordsCopied = false;
                     this.diagnostics = {
                         requestUrl: fetchUrl,
                         status: null,
@@ -756,6 +758,23 @@
 
                 setKeywordMode(mode) {
                     this.keywordMode = mode === 'words' ? 'words' : 'tags';
+                    this.keywordsCopied = false;
+                },
+
+                async copyKeywords() {
+                    const text = this.activeKeywords.map((keyword) => keyword.term).join(',');
+                    if (!text) {
+                        return;
+                    }
+                    try {
+                        await navigator.clipboard.writeText(text);
+                        this.keywordsCopied = true;
+                        setTimeout(() => {
+                            this.keywordsCopied = false;
+                        }, 2000);
+                    } catch (error) {
+                        console.error('Could not copy keywords:', error);
+                    }
                 },
 
                 formatProductType(type) {
@@ -1155,6 +1174,10 @@
                             class="px-3 py-1 text-sm font-semibold rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">Single
                             Words</button>
                         <span class="text-xs text-gray-500" x-text="formatNumber(activeKeywords.length) + ' unique terms'"></span>
+                        <button type="button" @click="copyKeywords()" title="Copy all terms separated by commas"
+                            class="ml-auto rounded-full border border-gray-600 bg-gray-700/60 px-3 py-1 text-sm font-semibold text-gray-200 transition hover:border-blue-400 hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">Copy
+                            Keywords</button>
+                        <span x-show="keywordsCopied" class="text-xs text-green-300">Copied</span>
                     </div>
                     <div class="flex flex-wrap gap-3">
                         <template x-for="(keyword, index) in activeKeywords.slice(0, 60)"
