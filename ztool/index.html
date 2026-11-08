@@ -61,6 +61,7 @@
     </style>
     <script>
         const ZAZZLE_BACKEND_STORAGE_KEY = 'zazzleToolBackendUrl';
+        const ZAZZLE_DEFAULT_BACKEND_URL = 'https://zazzle-search-api.harrisfm90.workers.dev';
         const ZAZZLE_REQUEST_TIMEOUT_MS = 30000;
         const ZAZZLE_PLACEHOLDER_IMAGE =
             'data:image/svg+xml;charset=UTF-8,' +
@@ -195,7 +196,7 @@
             return {
                 placeholderImage: ZAZZLE_PLACEHOLDER_IMAGE,
                 searchTerm: '',
-                backendUrl: readStoredValue(ZAZZLE_BACKEND_STORAGE_KEY),
+                backendUrl: readStoredValue(ZAZZLE_BACKEND_STORAGE_KEY) || ZAZZLE_DEFAULT_BACKEND_URL,
                 searchOptions: {
                     sortBy: 'orderitemcount_month',
                     department: '0',
