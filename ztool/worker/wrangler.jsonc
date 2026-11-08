@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zazzle-search-api",
+  "main": "src/index.js",
+  "compatibility_date": "2025-01-01",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "ALLOWED_ORIGIN": "*",
+    "UPSTREAM_TIMEOUT_MS": "15000",
+    "CACHE_TTL_SECONDS": "60"
+  }
+}
