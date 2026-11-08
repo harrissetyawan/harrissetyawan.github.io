@@ -78,6 +78,25 @@
             currency: 'USD',
         });
 
+        // Zazzle product type ids are vendor-prefixed and often concatenated.
+        const ZAZZLE_PRODUCT_TYPE_LABELS = {
+            foldedgreetingcard: 'Folded Greeting Card',
+            foldedholidaycard: 'Folded Holiday Card',
+            flatholidaycard: 'Flat Holiday Card',
+            flatnotecard: 'Flat Note Card',
+            businesscard: 'Business Card',
+            throwpillow: 'Throw Pillow',
+            contoursticker: 'Contour Sticker',
+            fleeceblanket: 'Fleece Blanket',
+            sherpablanket: 'Sherpa Blanket',
+            carmagnet: 'Car Magnet',
+            fleximagnet: 'Flexi Magnet',
+            licenseplateframe: 'License Plate Frame',
+            wrappingpaper: 'Wrapping Paper',
+            gifttag: 'Gift Tag',
+            invitation3: 'Invitation 3',
+        };
+
         function readStoredValue(key) {
             try {
                 return localStorage.getItem(key) || '';
@@ -120,55 +139,92 @@
             }
         }
 
+        function toTrimmedString(value) {
+            return typeof value === 'string' ? value.trim() : '';
+        }
+
         function normalizeStats(rawStats) {
             const stats = rawStats && typeof rawStats === 'object' ? rawStats : {};
             return {
                 sales: toFiniteNumber(stats.sales),
                 views: toFiniteNumber(stats.views),
                 carts: toFiniteNumber(stats.carts),
+                likes: toFiniteNumber(stats.likes),
+                personalizations: toFiniteNumber(stats.personalizations),
+                customizations: toFiniteNumber(stats.customizations),
                 conversionRate: toFiniteNumber(stats.conversionRate),
+                estimatedRevenue: toFiniteNumber(stats.estimatedRevenue),
+            };
+        }
+
+        function normalizeFlags(rawFlags, stats) {
+            const flags = rawFlags && typeof rawFlags === 'object' ? rawFlags : {};
+            return {
+                bestSeller: Boolean(flags.bestSeller),
+                bestSellerTier: toTrimmedString(flags.bestSellerTier) || null,
+                bestSellerScope: toTrimmedString(flags.bestSellerScope) || null,
+                editorsPick: Boolean(flags.editorsPick),
+                popular: Boolean(flags.popular),
+                easyToPersonalize: Boolean(flags.easyToPersonalize),
+                officiallyLicensed: Boolean(flags.officiallyLicensed),
+                personalized: Boolean(flags.personalized) || stats.personalizations > 0,
             };
         }
 
         function normalizeProduct(rawProduct, index) {
             const product = rawProduct && typeof rawProduct === 'object' ? rawProduct : {};
-            const title = typeof product.titleSeo === 'string' && product.titleSeo.trim()
-                ? product.titleSeo.trim()
-                : 'Untitled product';
+            const title = toTrimmedString(product.titleSeo) || 'Untitled product';
+            const stats = normalizeStats(product.stats);
+            const price = Math.max(0, toFiniteNumber(product.price));
 
             return {
                 id: product.id != null ? String(product.id) : `product-${index}`,
                 titleSeo: title,
-                storeName: typeof product.storeName === 'string' && product.storeName.trim()
-                    ? product.storeName.trim()
-                    : 'Unknown store',
+                description: toTrimmedString(product.description),
+                storeName: toTrimmedString(product.storeName) || 'Unknown store',
+                storeHandle: toTrimmedString(product.storeHandle),
                 imageUrl: toSafeHttpUrl(product.imageUrl),
                 linkUrl: toSafeHttpUrl(product.linkUrl),
-                stats: normalizeStats(product.stats),
+                price,
+                productType: toTrimmedString(product.productType) || 'unknown',
+                promoLabel: toTrimmedString(product.promoLabel),
+                stats,
+                flags: normalizeFlags(product.flags, stats),
             };
+        }
+
+        function normalizeTermCounts(rawCounts) {
+            return Array.isArray(rawCounts)
+                ? rawCounts
+                    .filter((entry) => entry && typeof entry === 'object')
+                    .map((entry) => ({
+                        term: toTrimmedString(entry.term),
+                        count: toFiniteNumber(entry.count),
+                    }))
+                    .filter((entry) => entry.term)
+                : [];
         }
 
         function normalizeAnalysis(rawAnalysis) {
             const analysis = rawAnalysis && typeof rawAnalysis === 'object' ? rawAnalysis : {};
-
-            const keywords = Array.isArray(analysis.keywords)
-                ? analysis.keywords
-                    .filter((keyword) => keyword && typeof keyword === 'object')
-                    .map((keyword) => ({
-                        term: typeof keyword.term === 'string' ? keyword.term.trim() : '',
-                        count: toFiniteNumber(keyword.count),
-                    }))
-                    .filter((keyword) => keyword.term)
-                : [];
+            const rawPrice = analysis.price && typeof analysis.price === 'object' ? analysis.price : {};
 
             const stores = Array.isArray(analysis.stores)
                 ? analysis.stores
                     .filter((store) => store && typeof store === 'object')
                     .map((store) => ({
-                        name: typeof store.name === 'string' && store.name.trim() ? store.name.trim() : 'Unknown store',
-                        totalSales: toFiniteNumber(store.totalSales),
+                        name: toTrimmedString(store.name) || 'Unknown store',
+                        storeHandle: toTrimmedString(store.storeHandle),
+                        storeImageUrl: toSafeHttpUrl(store.storeImageUrl),
                         productCount: toFiniteNumber(store.productCount),
+                        totalSales: toFiniteNumber(store.totalSales),
+                        totalViews: toFiniteNumber(store.totalViews),
+                        estimatedRevenue: toFiniteNumber(store.estimatedRevenue),
                         averagePrice: toFiniteNumber(store.averagePrice),
+                        conversionRate: toFiniteNumber(store.conversionRate),
+                        topProductTitle: toTrimmedString(store.topProductTitle),
+                        topProductSales: toFiniteNumber(store.topProductSales),
+                        salesShare: toFiniteNumber(store.salesShare),
                     }))
                 : [];
 
@@ -176,19 +232,126 @@
                 ? analysis.productTypes
                     .filter((productType) => productType && typeof productType === 'object')
                     .map((productType) => ({
-                        type: typeof productType.type === 'string' && productType.type.trim()
-                            ? productType.type.trim()
-                            : 'unknown',
+                        type: toTrimmedString(productType.type) || 'unknown',
                         count: toFiniteNumber(productType.count),
+                        totalSales: toFiniteNumber(productType.totalSales),
+                        estimatedRevenue: toFiniteNumber(productType.estimatedRevenue),
+                        averagePrice: toFiniteNumber(productType.averagePrice),
+                        salesShare: toFiniteNumber(productType.salesShare),
                     }))
                 : [];
 
-            return { keywords, stores, productTypes };
+            const priceBuckets = Array.isArray(rawPrice.buckets)
+                ? rawPrice.buckets
+                    .filter((bucket) => bucket && typeof bucket === 'object')
+                    .map((bucket) => ({
+                        label: toTrimmedString(bucket.label) || 'Unknown',
+                        min: toFiniteNumber(bucket.min),
+                        max: bucket.max == null ? null : toFiniteNumber(bucket.max),
+                        count: toFiniteNumber(bucket.count),
+                        share: toFiniteNumber(bucket.share),
+                    }))
+                : [];
+
+            const rawBadges = analysis.badges && typeof analysis.badges === 'object' ? analysis.badges : {};
+
+            const filters = Array.isArray(analysis.filters)
+                ? analysis.filters
+                    .filter((filter) => filter && typeof filter === 'object')
+                    .map((filter) => ({
+                        id: toTrimmedString(filter.id),
+                        name: toTrimmedString(filter.name) || toTrimmedString(filter.id),
+                        urlParam: toTrimmedString(filter.urlParam),
+                        multiSelect: Boolean(filter.multiSelect),
+                        values: Array.isArray(filter.values)
+                            ? filter.values
+                                .filter((value) => value && typeof value === 'object')
+                                .map((value) => ({
+                                    id: value.id != null ? String(value.id) : '',
+                                    name: toTrimmedString(value.name),
+                                }))
+                                .filter((value) => value.id && value.name)
+                            : [],
+                    }))
+                    .filter((filter) => filter.id)
+                : [];
+
+            const categories = Array.isArray(analysis.categories)
+                ? analysis.categories
+                    .filter((category) => category && typeof category === 'object')
+                    .map((category) => ({
+                        id: category.id != null ? String(category.id) : '',
+                        name: toTrimmedString(category.name),
+                    }))
+                    .filter((category) => category.id && category.name)
+                : [];
+
+            return {
+                keywords: normalizeTermCounts(analysis.keywords),
+                keywordTags: normalizeTermCounts(analysis.keywordTags),
+                stores,
+                productTypes,
+                price: {
+                    min: toFiniteNumber(rawPrice.min),
+                    median: toFiniteNumber(rawPrice.median),
+                    average: toFiniteNumber(rawPrice.average),
+                    max: toFiniteNumber(rawPrice.max),
+                    buckets: priceBuckets,
+                },
+                badges: {
+                    bestSellers: toFiniteNumber(rawBadges.bestSellers),
+                    editorsPicks: toFiniteNumber(rawBadges.editorsPicks),
+                    popular: toFiniteNumber(rawBadges.popular),
+                    easyToPersonalize: toFiniteNumber(rawBadges.easyToPersonalize),
+                    officiallyLicensed: toFiniteNumber(rawBadges.officiallyLicensed),
+                    personalized: toFiniteNumber(rawBadges.personalized),
+                },
+                filters,
+                categories,
+            };
         }
 
         function normalizeMarket(rawMarket) {
             const market = rawMarket && typeof rawMarket === 'object' ? rawMarket : {};
-            return { saturation: Math.max(0, toFiniteNumber(market.saturation)) };
+            return {
+                saturation: Math.max(0, toFiniteNumber(market.saturation)),
+                accessibleResults: Math.max(0, toFiniteNumber(market.accessibleResults)),
+                lastPageNum: Math.max(0, toFiniteNumber(market.lastPageNum)),
+                page: Math.max(1, toFiniteNumber(market.page) || 1),
+                pageSize: Math.max(0, toFiniteNumber(market.pageSize)),
+                sortBy: toTrimmedString(market.sortBy) || null,
+                analyzedProducts: Math.max(0, toFiniteNumber(market.analyzedProducts)),
+                totalSales: Math.max(0, toFiniteNumber(market.totalSales)),
+                averageSales: Math.max(0, toFiniteNumber(market.averageSales)),
+                medianPrice: Math.max(0, toFiniteNumber(market.medianPrice)),
+                top10SalesShare: Math.max(0, toFiniteNumber(market.top10SalesShare)),
+                personalizedShare: Math.max(0, toFiniteNumber(market.personalizedShare)),
+                promoShare: Math.max(0, toFiniteNumber(market.promoShare)),
+                bestSellerShare: Math.max(0, toFiniteNumber(market.bestSellerShare)),
+            };
+        }
+
+        function normalizeSuggestions(rawSuggestions) {
+            return Array.isArray(rawSuggestions)
+                ? rawSuggestions
+                    .filter((suggestion) => suggestion && typeof suggestion === 'object')
+                    .map((suggestion) => ({
+                        group: toTrimmedString(suggestion.group) || 'suggested',
+                        name: toTrimmedString(suggestion.name),
+                        searchTerm: toTrimmedString(suggestion.searchTerm),
+                        imageUrl: toSafeHttpUrl(suggestion.imageUrl),
+                        altText: toTrimmedString(suggestion.altText),
+                    }))
+                    .filter((suggestion) => suggestion.name && suggestion.searchTerm)
+                : [];
+        }
+
+        function emptyAnalysis() {
+            return normalizeAnalysis(null);
+        }
+
+        function emptyMarket() {
+            return normalizeMarket(null);
         }
 
         function zazzleTool() {
@@ -208,14 +371,11 @@
                 products: [],
                 topProduct: null,
                 view: 'products',
-                analysis: {
-                    keywords: [],
-                    stores: [],
-                    productTypes: [],
-                },
-                market: {
-                    saturation: 0,
-                },
+                analysis: emptyAnalysis(),
+                market: emptyMarket(),
+                suggestions: [],
+                source: null,
+                keywordMode: 'tags',
                 sortBy: 'sales',
                 requestId: 0,
                 activeController: null,
@@ -229,6 +389,88 @@
                         const statB = b.stats ? b.stats[key] : 0;
                         return statB - statA;
                     });
+                },
+
+                get activeKeywords() {
+                    return this.keywordMode === 'tags'
+                        ? this.analysis.keywordTags
+                        : this.analysis.keywords;
+                },
+
+                get suggestionGroups() {
+                    const groups = new Map();
+                    for (const suggestion of this.suggestions) {
+                        const key = suggestion.group || 'suggested';
+                        if (!groups.has(key)) {
+                            groups.set(key, []);
+                        }
+                        groups.get(key).push(suggestion);
+                    }
+                    return [...groups.entries()].map(([group, items]) => ({
+                        group,
+                        label: this.formatGroupLabel(group),
+                        items,
+                    }));
+                },
+
+                productBadges(product) {
+                    const flags = product && product.flags ? product.flags : {};
+                    const badges = [];
+                    if (flags.bestSeller) {
+                        badges.push({
+                            label: flags.bestSellerTier
+                                ? `Best Seller (${flags.bestSellerTier})`
+                                : 'Best Seller',
+                            classes: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+                        });
+                    }
+                    if (flags.editorsPick) {
+                        badges.push({
+                            label: "Editor's Pick",
+                            classes: 'bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40',
+                        });
+                    }
+                    if (flags.popular) {
+                        badges.push({
+                            label: 'Popular',
+                            classes: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+                        });
+                    }
+                    if (flags.easyToPersonalize) {
+                        badges.push({
+                            label: 'Easy to Personalize',
+                            classes: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+                        });
+                    }
+                    if (flags.officiallyLicensed) {
+                        badges.push({
+                            label: 'Officially Licensed',
+                            classes: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
+                        });
+                    }
+                    return badges;
+                },
+
+                applySuggestion(suggestion) {
+                    if (!suggestion || !suggestion.searchTerm) {
+                        return;
+                    }
+                    this.searchTerm = suggestion.searchTerm;
+                    this.search();
+                },
+
+                applyCategory(category) {
+                    if (!category || category.id == null || category.id === '') {
+                        return;
+                    }
+                    this.searchOptions.department = String(category.id);
+                    this.search();
+                },
+
+                formatGroupLabel(group) {
+                    return String(group || 'suggested')
+                        .replace(/_/g, ' ')
+                        .replace(/\b\w/g, (letter) => letter.toUpperCase());
                 },
 
                 setSort(key) {
@@ -261,6 +503,7 @@
                             `sortBy=${encodeURIComponent(this.searchOptions.sortBy)}`,
                             `department=${encodeURIComponent(this.searchOptions.department)}`,
                             `pageSize=${encodeURIComponent(this.searchOptions.pageSize)}`,
+                            'page=1',
                         ].join('&');
                         url.hash = '';
                         return url.toString();
@@ -369,10 +612,13 @@
                     this.loading = true;
                     this.products = [];
                     this.topProduct = null;
-                    this.analysis = { keywords: [], stores: [], productTypes: [] };
-                    this.market = { saturation: 0 };
+                    this.analysis = emptyAnalysis();
+                    this.market = emptyMarket();
+                    this.suggestions = [];
+                    this.source = null;
                     this.view = 'products';
                     this.sortBy = 'sales';
+                    this.keywordMode = 'tags';
                     this.diagnostics = {
                         requestUrl: fetchUrl,
                         status: null,
@@ -439,6 +685,14 @@
                         this.products = products;
                         this.analysis = normalizeAnalysis(data && data.analysis);
                         this.market = normalizeMarket(data && data.market);
+                        this.suggestions = normalizeSuggestions(data && data.suggestions);
+                        this.source = data && data.source && typeof data.source === 'object'
+                            ? {
+                                absoluteUrl: toSafeHttpUrl(data.source.absoluteUrl),
+                                canonicalUrl: toSafeHttpUrl(data.source.canonicalUrl),
+                                originalTerm: toTrimmedString(data.source.originalTerm),
+                            }
+                            : null;
                         this.topProduct = this.pickTopProduct(data, products);
 
                         if (!products.length) {
@@ -496,14 +750,30 @@
                     return `${toFiniteNumber(value).toFixed(2)}%`;
                 },
 
+                formatShare(value) {
+                    return `${toFiniteNumber(value).toFixed(1)}%`;
+                },
+
+                setKeywordMode(mode) {
+                    this.keywordMode = mode === 'words' ? 'words' : 'tags';
+                },
+
                 formatProductType(type) {
                     if (typeof type !== 'string' || !type.trim()) {
                         return 'Unknown';
                     }
-                    return type
-                        .replace(/^zazzle_/, '')
-                        .replace(/_/g, ' ')
-                        .replace(/\b\w/g, (letter) => letter.toUpperCase());
+                    const cleaned = type
+                        .trim()
+                        .toLowerCase()
+                        .replace(/^[a-z0-9]+_/, '')
+                        .replace(/_/g, ' ');
+                    if (!cleaned) {
+                        return 'Unknown';
+                    }
+                    if (ZAZZLE_PRODUCT_TYPE_LABELS[cleaned]) {
+                        return ZAZZLE_PRODUCT_TYPE_LABELS[cleaned];
+                    }
+                    return cleaned.replace(/\b\w/g, (letter) => letter.toUpperCase());
                 },
 
                 destroy() {
@@ -560,8 +830,8 @@
                         class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                         <option value="orderitemcount_month">Current Bestsellers</option>
                         <option value="orderitemcount_all">All-Time Bestsellers</option>
-                        <option value="trending">Trending</option>
                         <option value="newest">Newest</option>
+                        <option value="relevance">Relevance</option>
                     </select>
                 </div>
                 <div>
@@ -582,9 +852,9 @@
                     <label for="search-depth" class="block text-sm font-medium text-gray-300 mb-1">Search Depth</label>
                     <select id="search-depth" x-model="searchOptions.pageSize"
                         class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                        <option value="24">Analyze Top 24</option>
                         <option value="60">Analyze Top 60</option>
-                        <option value="120">Analyze Top 120</option>
-                        <option value="240">Analyze Top 240</option>
+                        <option value="120">Analyze Top 120 (max)</option>
                     </select>
                 </div>
             </div>
@@ -644,24 +914,44 @@
             <p class="mt-3 text-gray-400">Fetching Zazzle data and analyzing this niche...</p>
         </div>
 
-        <div x-show="!loading && products.length > 0" class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center mb-8">
+        <div x-show="!loading && products.length > 0"
+            class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 text-center mb-8">
             <div class="bg-gray-800 p-4 rounded-xl">
                 <div class="text-sm font-medium text-gray-400">Niche Saturation</div>
                 <div class="text-2xl font-bold text-white" x-text="formatNumber(market.saturation)"></div>
-                <div class="text-xs text-gray-400">Total Competing Products</div>
+                <div class="text-xs text-gray-400" x-text="formatNumber(market.accessibleResults) + ' reachable via API'"></div>
             </div>
             <div class="bg-gray-800 p-4 rounded-xl">
                 <div class="text-sm font-medium text-gray-400">Top Product Sales</div>
                 <div class="text-2xl font-bold text-green-400"
                     x-text="topProduct ? formatNumber(topProduct.stats.sales) : 'N/A'"></div>
-                <div class="text-xs text-gray-400">Est. Sales/Mo for #1 Product</div>
+                <div class="text-xs text-gray-400"
+                    x-text="topProduct ? 'Est. ' + formatCurrency(topProduct.stats.estimatedRevenue) + ' revenue/mo' : 'Est. Sales/Mo for #1'"></div>
             </div>
             <div class="bg-gray-800 p-4 rounded-xl">
                 <div class="text-sm font-medium text-gray-400">Dominant Product Type</div>
                 <div class="text-2xl font-bold text-blue-400"
                     x-text="analysis.productTypes.length > 0 ? formatProductType(analysis.productTypes[0].type) : 'N/A'">
                 </div>
-                <div class="text-xs text-gray-400">Most Frequent in Top Results</div>
+                <div class="text-xs text-gray-400"
+                    x-text="analysis.productTypes.length > 0 ? formatNumber(analysis.productTypes[0].count) + ' items · ' + formatShare(analysis.productTypes[0].salesShare) + ' of sales' : 'Most frequent in top results'"></div>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-xl">
+                <div class="text-sm font-medium text-gray-400">Median Price</div>
+                <div class="text-2xl font-bold text-amber-400" x-text="formatCurrency(analysis.price.median)"></div>
+                <div class="text-xs text-gray-400"
+                    x-text="analysis.price.max > 0 ? formatCurrency(analysis.price.min) + ' – ' + formatCurrency(analysis.price.max) : 'No price data'"></div>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-xl">
+                <div class="text-sm font-medium text-gray-400">Personalizable</div>
+                <div class="text-2xl font-bold text-emerald-400" x-text="formatShare(market.personalizedShare)"></div>
+                <div class="text-xs text-gray-400"
+                    x-text="formatNumber(analysis.badges.personalized) + ' of ' + formatNumber(market.analyzedProducts) + ' products'"></div>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-xl">
+                <div class="text-sm font-medium text-gray-400">Top-10 Sales Share</div>
+                <div class="text-2xl font-bold text-fuchsia-400" x-text="formatShare(market.top10SalesShare)"></div>
+                <div class="text-xs text-gray-400" x-text="'Sales concentration · ' + formatShare(market.promoShare) + ' on promo'"></div>
             </div>
         </div>
 
@@ -697,6 +987,13 @@
                             :class="{'border-blue-500 text-blue-400': view === 'stores', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'stores'}"
                             class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900">Top
                             Stores</button>
+                        <button type="button" id="tab-related" role="tab" aria-controls="panel-related"
+                            :aria-selected="view === 'related'" :tabindex="view === 'related' ? 0 : -1"
+                            @click="view = 'related'" @keydown.right.prevent="focusTab($event, 1)"
+                            @keydown.left.prevent="focusTab($event, -1)"
+                            :class="{'border-blue-500 text-blue-400': view === 'related', 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500': view !== 'related'}"
+                            class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900">Related
+                            Niches</button>
                     </nav>
                 </div>
             </div>
@@ -707,6 +1004,10 @@
                     :class="sortBy === 'sales' ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'"
                     class="px-3 py-1 text-sm font-semibold rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">Top
                     Selling</button>
+                <button type="button" @click="setSort('estimatedRevenue')" :aria-pressed="sortBy === 'estimatedRevenue'"
+                    :class="sortBy === 'estimatedRevenue' ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'"
+                    class="px-3 py-1 text-sm font-semibold rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">Est.
+                    Revenue</button>
                 <button type="button" @click="setSort('views')" :aria-pressed="sortBy === 'views'"
                     :class="sortBy === 'views' ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'"
                     class="px-3 py-1 text-sm font-semibold rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">Most
@@ -727,62 +1028,54 @@
                                 @error="$event.target.src = placeholderImage" loading="lazy" decoding="async"
                                 referrerpolicy="no-referrer" class="w-full h-48 object-cover bg-gray-700">
                             <div class="p-4 flex flex-col flex-grow">
-                                <h3 class="text-md font-semibold text-white mb-1 line-clamp-2 min-h-[3rem]"
-                                    x-text="product.titleSeo"></h3>
-                                <p class="text-sm text-gray-400 mb-3">by <span class="font-medium text-gray-300"
+                                <div class="flex items-start justify-between gap-2 mb-1">
+                                    <h3 class="text-md font-semibold text-white line-clamp-2 min-h-[3rem]"
+                                        x-text="product.titleSeo"></h3>
+                                    <span class="shrink-0 rounded-lg bg-gray-700 px-2 py-1 text-sm font-bold text-white"
+                                        x-text="formatCurrency(product.price)"></span>
+                                </div>
+                                <p class="text-sm text-gray-400 mb-2">by <span class="font-medium text-gray-300"
                                         x-text="product.storeName"></span></p>
-                                <div class="grid grid-cols-2 gap-y-3 gap-x-2 text-sm mb-4">
-                                    <div class="flex items-center space-x-2">
-                                        <svg class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20"
-                                            aria-hidden="true">
-                                            <path
-                                                d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" />
-                                        </svg>
-                                        <div>
-                                            <div class="font-bold text-white" x-text="formatNumber(product.stats.sales)">
-                                            </div>
-                                            <div class="text-xs text-gray-400">Sales/Mo</div>
-                                        </div>
+                                <div class="mb-2 flex flex-wrap gap-1">
+                                    <span class="rounded-full bg-gray-700/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-300"
+                                        x-text="formatProductType(product.productType)"></span>
+                                    <template x-for="(badge, badgeIndex) in productBadges(product)"
+                                        :key="`${product.id}-badge-${badgeIndex}`">
+                                        <span class="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                                            :class="badge.classes" x-text="badge.label"></span>
+                                    </template>
+                                </div>
+                                <p x-show="product.promoLabel" class="mb-2 text-xs font-medium text-lime-300"
+                                    x-text="product.promoLabel"></p>
+                                <p x-show="product.description" class="mb-3 text-xs text-gray-500 line-clamp-2"
+                                    x-text="product.description"></p>
+                                <div class="grid grid-cols-2 gap-2 text-sm mb-4">
+                                    <div class="rounded-lg bg-gray-700/40 px-2 py-1.5">
+                                        <div class="text-[10px] uppercase tracking-wide text-gray-400">Sales/mo</div>
+                                        <div class="font-bold text-white" x-text="formatNumber(product.stats.sales)"></div>
                                     </div>
-                                    <div class="flex items-center space-x-2">
-                                        <svg class="h-5 w-5 text-purple-400" fill="currentColor" viewBox="0 0 20 20"
-                                            aria-hidden="true">
-                                            <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                                            <path fill-rule="evenodd"
-                                                d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.022 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z"
-                                                clip-rule="evenodd" />
-                                        </svg>
-                                        <div>
-                                            <div class="font-bold text-white"
-                                                x-text="formatNumber(product.stats.views)"></div>
-                                            <div class="text-xs text-gray-400">Views/Mo</div>
-                                        </div>
+                                    <div class="rounded-lg bg-gray-700/40 px-2 py-1.5">
+                                        <div class="text-[10px] uppercase tracking-wide text-gray-400">Est. revenue/mo</div>
+                                        <div class="font-bold text-green-400"
+                                            x-text="formatCurrency(product.stats.estimatedRevenue)"></div>
                                     </div>
-                                    <div class="flex items-center space-x-2">
-                                        <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20"
-                                            aria-hidden="true">
-                                            <path fill-rule="evenodd"
-                                                d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z"
-                                                clip-rule="evenodd" />
-                                        </svg>
-                                        <div>
-                                            <div class="font-bold text-white" x-text="formatNumber(product.stats.carts)">
-                                            </div>
-                                            <div class="text-xs text-gray-400">In Carts</div>
-                                        </div>
+                                    <div class="rounded-lg bg-gray-700/40 px-2 py-1.5">
+                                        <div class="text-[10px] uppercase tracking-wide text-gray-400">Views/mo</div>
+                                        <div class="font-bold text-white" x-text="formatNumber(product.stats.views)"></div>
                                     </div>
-                                    <div class="flex items-center space-x-2">
-                                        <svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"
-                                            aria-hidden="true">
-                                            <path fill-rule="evenodd"
-                                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
-                                                clip-rule="evenodd" />
-                                        </svg>
-                                        <div>
-                                            <div class="font-bold text-white"
-                                                x-text="formatPercent(product.stats.conversionRate)"></div>
-                                            <div class="text-xs text-gray-400">Conv. Rate</div>
-                                        </div>
+                                    <div class="rounded-lg bg-gray-700/40 px-2 py-1.5">
+                                        <div class="text-[10px] uppercase tracking-wide text-gray-400">In carts</div>
+                                        <div class="font-bold text-white" x-text="formatNumber(product.stats.carts)"></div>
+                                    </div>
+                                    <div class="rounded-lg bg-gray-700/40 px-2 py-1.5">
+                                        <div class="text-[10px] uppercase tracking-wide text-gray-400">Conv. rate</div>
+                                        <div class="font-bold text-white"
+                                            x-text="formatPercent(product.stats.conversionRate)"></div>
+                                    </div>
+                                    <div class="rounded-lg bg-gray-700/40 px-2 py-1.5">
+                                        <div class="text-[10px] uppercase tracking-wide text-gray-400">Personalized</div>
+                                        <div class="font-bold text-white"
+                                            x-text="formatNumber(product.stats.personalizations) + '×'"></div>
                                     </div>
                                 </div>
                                 <div class="mt-auto pt-3 border-t border-gray-700">
@@ -807,24 +1100,35 @@
                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
                     <h2 class="text-2xl font-bold text-white mb-4">Product Type Analysis</h2>
                     <p class="text-gray-400 mb-6">These are the most common product types found in the top search
-                        results, indicating what customers are buying in this niche.</p>
+                        results, including their estimated monthly sales, revenue, price and sales share.</p>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm text-left text-gray-300">
-                            <caption class="sr-only">Product type counts from the analyzed search results</caption>
+                            <caption class="sr-only">Product type performance from the analyzed search results</caption>
                             <thead class="text-xs text-gray-400 uppercase bg-gray-700/50">
                                 <tr>
-                                    <th scope="col" class="px-6 py-3">Product Type</th>
-                                    <th scope="col" class="px-6 py-3 text-right">Count in Results</th>
+                                    <th scope="col" class="px-4 py-3">Product Type</th>
+                                    <th scope="col" class="px-4 py-3 text-right">Count</th>
+                                    <th scope="col" class="px-4 py-3 text-right">Sales/Mo</th>
+                                    <th scope="col" class="px-4 py-3 text-right">Est. Revenue/Mo</th>
+                                    <th scope="col" class="px-4 py-3 text-right">Avg. Price</th>
+                                    <th scope="col" class="px-4 py-3 text-right">Sales Share</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <template x-for="(productType, index) in analysis.productTypes"
                                     :key="`${productType.type}-${index}`">
                                     <tr class="border-b border-gray-700 hover:bg-gray-700/50">
-                                        <td class="px-6 py-4 font-bold text-white"
+                                        <td class="px-4 py-4 font-bold text-white"
                                             x-text="formatProductType(productType.type)"></td>
-                                        <td class="px-6 py-4 text-right font-semibold"
-                                            x-text="formatNumber(productType.count)"></td>
+                                        <td class="px-4 py-4 text-right" x-text="formatNumber(productType.count)"></td>
+                                        <td class="px-4 py-4 text-right text-white"
+                                            x-text="formatNumber(productType.totalSales)"></td>
+                                        <td class="px-4 py-4 text-right font-semibold text-green-400"
+                                            x-text="formatCurrency(productType.estimatedRevenue)"></td>
+                                        <td class="px-4 py-4 text-right"
+                                            x-text="formatCurrency(productType.averagePrice)"></td>
+                                        <td class="px-4 py-4 text-right"
+                                            x-text="formatShare(productType.salesShare)"></td>
                                     </tr>
                                 </template>
                             </tbody>
@@ -839,10 +1143,21 @@
                 aria-labelledby="tab-keywords">
                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
                     <h2 class="text-2xl font-bold text-white mb-4">Top Keywords Analysis</h2>
-                    <p class="text-gray-400 mb-6">These are the most frequently used keywords by the top-selling
-                        products in this niche.</p>
+                    <p class="text-gray-400 mb-4">Zazzle tags can be multi-word phrases. Switch between full phrase
+                        tags (better for niche targeting) and individual words.</p>
+                    <div class="mb-5 flex flex-wrap items-center gap-2">
+                        <button type="button" @click="setKeywordMode('tags')" :aria-pressed="keywordMode === 'tags'"
+                            :class="keywordMode === 'tags' ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'"
+                            class="px-3 py-1 text-sm font-semibold rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">Phrase
+                            Tags</button>
+                        <button type="button" @click="setKeywordMode('words')" :aria-pressed="keywordMode === 'words'"
+                            :class="keywordMode === 'words' ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'"
+                            class="px-3 py-1 text-sm font-semibold rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">Single
+                            Words</button>
+                        <span class="text-xs text-gray-500" x-text="formatNumber(activeKeywords.length) + ' unique terms'"></span>
+                    </div>
                     <div class="flex flex-wrap gap-3">
-                        <template x-for="(keyword, index) in analysis.keywords.slice(0, 50)"
+                        <template x-for="(keyword, index) in activeKeywords.slice(0, 60)"
                             :key="`${keyword.term}-${index}`">
                             <div class="bg-gray-700 rounded-full px-4 py-2 text-sm flex items-center space-x-2">
                                 <span class="font-medium text-white" x-text="keyword.term"></span>
@@ -851,7 +1166,7 @@
                             </div>
                         </template>
                     </div>
-                    <p x-show="analysis.keywords.length === 0" class="text-gray-400">No keyword data was returned for
+                    <p x-show="activeKeywords.length === 0" class="text-gray-400">No keyword data was returned for
                         this search.</p>
                 </div>
             </div>
@@ -860,29 +1175,40 @@
                 aria-labelledby="tab-stores">
                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
                     <h2 class="text-2xl font-bold text-white mb-4">Top Stores Analysis</h2>
-                    <p class="text-gray-400 mb-6">Discover the dominant stores in this niche based on aggregated monthly
-                        sales and product count from the search results.</p>
+                    <p class="text-gray-400 mb-6">Discover the dominant stores in this niche based on estimated
+                        monthly revenue, sales, conversion rate and product count from the search results.</p>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm text-left text-gray-300">
                             <caption class="sr-only">Store performance from the analyzed search results</caption>
                             <thead class="text-xs text-gray-400 uppercase bg-gray-700/50">
                                 <tr>
-                                    <th scope="col" class="px-6 py-3">Rank</th>
-                                    <th scope="col" class="px-6 py-3">Store Name</th>
-                                    <th scope="col" class="px-6 py-3">Est. Monthly Sales</th>
-                                    <th scope="col" class="px-6 py-3">Products in Top Results</th>
-                                    <th scope="col" class="px-6 py-3">Avg. Price</th>
+                                    <th scope="col" class="px-4 py-3">Rank</th>
+                                    <th scope="col" class="px-4 py-3">Store Name</th>
+                                    <th scope="col" class="px-4 py-3 text-right">Est. Revenue/Mo</th>
+                                    <th scope="col" class="px-4 py-3 text-right">Sales/Mo</th>
+                                    <th scope="col" class="px-4 py-3 text-right">Products</th>
+                                    <th scope="col" class="px-4 py-3 text-right">Avg. Price</th>
+                                    <th scope="col" class="px-4 py-3 text-right">Conv. Rate</th>
+                                    <th scope="col" class="px-4 py-3 text-right">Sales Share</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <template x-for="(store, index) in analysis.stores" :key="`${store.name}-${index}`">
                                     <tr class="border-b border-gray-700 hover:bg-gray-700/50">
-                                        <td class="px-6 py-4 font-medium" x-text="index + 1"></td>
-                                        <td class="px-6 py-4 font-bold text-white" x-text="store.name"></td>
-                                        <td class="px-6 py-4 text-green-400 font-semibold"
+                                        <td class="px-4 py-4 font-medium" x-text="index + 1"></td>
+                                        <td class="px-4 py-4">
+                                            <div class="font-bold text-white" x-text="store.name"></div>
+                                            <div x-show="store.topProductTitle" class="text-xs text-gray-500 line-clamp-1"
+                                                x-text="'Top: ' + store.topProductTitle"></div>
+                                        </td>
+                                        <td class="px-4 py-4 text-right font-semibold text-green-400"
+                                            x-text="formatCurrency(store.estimatedRevenue)"></td>
+                                        <td class="px-4 py-4 text-right text-white"
                                             x-text="formatNumber(store.totalSales)"></td>
-                                        <td class="px-6 py-4" x-text="formatNumber(store.productCount)"></td>
-                                        <td class="px-6 py-4" x-text="formatCurrency(store.averagePrice)"></td>
+                                        <td class="px-4 py-4 text-right" x-text="formatNumber(store.productCount)"></td>
+                                        <td class="px-4 py-4 text-right" x-text="formatCurrency(store.averagePrice)"></td>
+                                        <td class="px-4 py-4 text-right" x-text="formatPercent(store.conversionRate)"></td>
+                                        <td class="px-4 py-4 text-right" x-text="formatShare(store.salesShare)"></td>
                                     </tr>
                                 </template>
                             </tbody>
@@ -890,6 +1216,61 @@
                     </div>
                     <p x-show="analysis.stores.length === 0" class="text-gray-400 mt-4">No store data was returned for
                         this search.</p>
+                </div>
+            </div>
+
+            <div x-show="view === 'related'" x-transition id="panel-related" role="tabpanel"
+                aria-labelledby="tab-related">
+                <div class="bg-gray-800 rounded-2xl shadow-lg p-6 mb-6">
+                    <h2 class="text-2xl font-bold text-white mb-4">Related Niches</h2>
+                    <p class="text-gray-400 mb-6">Zazzle guided-search suggestions for this niche. Click any chip to
+                        analyze that sub-niche instantly.</p>
+                    <template x-for="group in suggestionGroups" :key="group.group">
+                        <div class="mb-6 last:mb-0">
+                            <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-400 mb-3"
+                                x-text="group.label"></h3>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="(suggestion, index) in group.items"
+                                    :key="`${group.group}-${index}-${suggestion.searchTerm}`">
+                                    <button type="button" @click="applySuggestion(suggestion)"
+                                        :title="suggestion.altText || suggestion.searchTerm"
+                                        class="flex items-center gap-2 rounded-full border border-gray-600 bg-gray-700/60 px-3 py-1.5 text-sm text-gray-200 transition hover:border-blue-400 hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+                                        <img :src="suggestion.imageUrl || placeholderImage"
+                                            @error="$event.target.src = placeholderImage" loading="lazy"
+                                            decoding="async" referrerpolicy="no-referrer" alt=""
+                                            class="h-6 w-6 rounded-full object-cover bg-gray-600">
+                                        <span x-text="suggestion.name"></span>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                    <p x-show="suggestions.length === 0" class="text-gray-400">No related niches were returned for
+                        this search.</p>
+                </div>
+
+                <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
+                    <h2 class="text-xl font-bold text-white mb-2">Filter by Category</h2>
+                    <p class="text-gray-400 mb-4">Re-run this search inside one of Zazzle's departments.</p>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" @click="searchOptions.department = '0'; search()"
+                            :class="searchOptions.department === '0' ? 'border-blue-500 bg-blue-600 text-white' : 'border-gray-600 bg-gray-700/60 text-gray-200 hover:border-blue-400'"
+                            class="rounded-full border px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">All
+                            Departments</button>
+                        <template x-for="(category, index) in analysis.categories" :key="`${category.id}-${index}`">
+                            <button type="button" @click="applyCategory(category)"
+                                :class="searchOptions.department === category.id ? 'border-blue-500 bg-blue-600 text-white' : 'border-gray-600 bg-gray-700/60 text-gray-200 hover:border-blue-400'"
+                                class="rounded-full border px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                                x-text="category.name"></button>
+                        </template>
+                    </div>
+                    <p x-show="analysis.categories.length === 0" class="text-gray-400 mt-4">No category filters were
+                        returned for this search.</p>
+                    <p x-show="source && source.absoluteUrl" class="mt-4 text-xs text-gray-500">
+                        Source:
+                        <a :href="source ? source.absoluteUrl : '#'" target="_blank" rel="noopener noreferrer"
+                            class="underline hover:text-gray-300">Zazzle search</a>
+                    </p>
                 </div>
             </div>
         </div>

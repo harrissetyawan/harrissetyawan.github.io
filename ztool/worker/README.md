@@ -2,31 +2,67 @@
 
 Cloudflare Worker replacement for the old Vercel `/api/search.js` handler used by
 `ztool/index.html`. It proxies Zazzle's product search, enriches each product with
-sales/views/carts stats, and returns the same payload shape the frontend expects:
+sales, views, carts, likes, personalization counts and estimated revenue, then
+returns a backward-compatible payload with market analysis:
 
 ```json
 {
   "products": [],
   "topProduct": {},
-  "analysis": { "keywords": [], "stores": [], "productTypes": [] },
-  "market": { "saturation": 0 }
+  "analysis": {
+    "keywords": [],
+    "keywordTags": [],
+    "stores": [],
+    "productTypes": [],
+    "price": { "min": 0, "median": 0, "average": 0, "max": 0, "buckets": [] },
+    "badges": {},
+    "filters": [],
+    "categories": []
+  },
+  "market": { "saturation": 0 },
+  "suggestions": [],
+  "source": {}
 }
 ```
+
+Existing fields keep their shape, so older frontends keep working. New fields are
+additive.
 
 ## Endpoint
 
 ```
-GET /api/search?term=boho%20wedding&sortBy=orderitemcount_month&department=0&pageSize=120
+GET /api/search?term=boho%20wedding&sortBy=orderitemcount_month&department=0&pageSize=120&page=1
 ```
 
-| Param        | Default                 | Notes                                              |
-| ------------ | ----------------------- | -------------------------------------------------- |
-| `term`       | required                | Search keyword / niche.                            |
-| `sortBy`     | `orderitemcount_month`  | Zazzle sort token, e.g. `orderitemcount_all`.      |
-| `department` | `0`                     | Zazzle department id/path. `0` means all.          |
-| `pageSize`   | `120`                   | Clamped to `1..240`.                               |
+| Param        | Default                | Notes                                                        |
+| ------------ | ---------------------- | ------------------------------------------------------------ |
+| `term`       | required               | Search keyword / niche.                                      |
+| `sortBy`     | `orderitemcount_month` | Zazzle sort token, e.g. `orderitemcount_all`, `newest`, `relevance`. |
+| `department` | `0`                    | Zazzle department id/path. `0` means all.                    |
+| `pageSize`   | `120`                  | Clamped to `1..120`. Zazzle itself caps requests at 120.     |
+| `page`       | `1`                    | Clamped to `1..50`. Zazzle exposes roughly the first 1,000 results. |
 
 `GET /` is also accepted as a convenience alias.
+
+## Response details
+
+- `products[]` keeps every original Zazzle field and adds:
+  - `stats`: `sales`, `views`, `carts`, `likes`, `personalizations`,
+    `customizations`, `conversionRate`, `estimatedRevenue` (`sales × price`).
+  - `flags`: `bestSeller` (+ `bestSellerTier`/`bestSellerScope`), `editorsPick`,
+    `popular`, `easyToPersonalize`, `officiallyLicensed`, `personalized`.
+- `analysis.keywords` counts single words; `analysis.keywordTags` counts the full
+  phrase tags Zazzle stores (tags are space separated, words inside a tag use `+`).
+- `analysis.stores[]` and `analysis.productTypes[]` include estimated monthly
+  revenue, average price, conversion rate and sales share.
+- `analysis.price` contains min/median/average/max plus price buckets.
+- `analysis.badges` summarises badge prevalence; `analysis.filters` exposes the
+  useful Zazzle facets; `analysis.categories` is the department facet.
+- `market` adds `accessibleResults` (`lastPageNum × pageSize`), `analyzedProducts`,
+  `totalSales`, `averageSales`, `medianPrice`, `top10SalesShare`,
+  `personalizedShare`, `promoShare` and `bestSellerShare`.
+- `suggestions` comes from Zazzle's guided search ("Related Niches" in the UI).
+- `source` returns the source/canonical Zazzle URLs, department and search term.
 
 Errors are JSON with an appropriate status:
 
