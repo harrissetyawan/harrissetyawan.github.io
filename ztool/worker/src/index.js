@@ -26,6 +26,26 @@ const MAX_REVIEWS_PAGES = 3;
 const REVIEWS_PREVIEW_LIMIT = 12;
 const REVIEWS_MEDIA_LIMIT = 8;
 const MAX_MEDIA_PER_REVIEW = 4;
+const REVIEWS_MOMENTUM_MONTHS = 12;
+const REVIEWS_THEME_LIMIT = 8;
+const REVIEWS_STORE_LIMIT = 30;
+// Below this many own-product reviews, themes fall back to the related feed
+// so the card still has language to show.
+const REVIEWS_THEME_OWN_MIN = 3;
+
+const REVIEW_THEME_STOP_WORDS = new Set([
+  'the', 'and', 'are', 'but', 'can', 'could', 'did', 'does', 'for', 'from',
+  'get', 'got', 'had', 'has', 'have', 'her', 'him', 'his', 'how', 'into',
+  'its', 'just', 'like', 'look', 'looks', 'made', 'make', 'more', 'most',
+  'much', 'not', 'now', 'one', 'only', 'our', 'out', 'over', 'really',
+  'received', 'should', 'some', 'than', 'that', 'their', 'them',
+  'then', 'there', 'these', 'they', 'this', 'too', 'use', 'used', 'using',
+  'very', 'was', 'were', 'what', 'when', 'where', 'which', 'who', 'will',
+  'with', 'would', 'you', 'your', 'about', 'after', 'again', 'also',
+  'been', 'before', 'being', 'both', 'buy', 'bought', 'item', 'order',
+  'ordered', 'product', 'purchase', 'purchased', 'thing', 'things', 'well',
+]);
+
 
 const RETRYABLE_STATUSES = new Set([403, 408, 425, 429, 500, 502, 503, 504]);
 const RETRY_DELAYS_MS = [600, 1500];
@@ -371,7 +391,14 @@ export function buildZazzleReviewsUrl({ productId, productType, pageNum = 1 }) {
   return url.toString();
 }
 
-export function buildReviewsPayload({ meta, reviews, productId, productType, pages = 1 }) {
+export function buildReviewsPayload({
+  meta,
+  reviews,
+  productId,
+  productType,
+  pages = 1,
+  now = Date.now(),
+}) {
   const safeMeta = meta && typeof meta === 'object' ? meta : {};
   const stats = safeMeta.stats && typeof safeMeta.stats === 'object' ? safeMeta.stats : {};
   const normalized = (Array.isArray(reviews) ? reviews : [])
@@ -392,14 +419,25 @@ export function buildReviewsPayload({ meta, reviews, productId, productType, pag
     sampleSize: normalized.length,
   };
 
-  const product = summarizeProductReviews(ownReviews, targetId);
+  const product = summarizeProductReviews(ownReviews, targetId, now);
+  const momentum = summarizeMomentum(normalized, ownReviews, now);
+  const themes = summarizeThemes(normalized, ownReviews);
   const preview = pickPreviewReviews(normalized, ownReviews, REVIEWS_PREVIEW_LIMIT);
+  const media = collectReviewMedia(
+    pickPreviewReviews(normalized, ownReviews, normalized.length),
+    REVIEWS_MEDIA_LIMIT
+  );
+  const stores = summarizeStoreTrust(normalized);
 
   return {
     summary,
     product,
+    momentum,
+    themes,
+    stores,
+    ugc: summarizeUgc(media),
     reviews: preview,
-    media: collectReviewMedia(preview, REVIEWS_MEDIA_LIMIT),
+    media,
     meta: {
       productId: targetId,
       productType: productType || null,
@@ -410,14 +448,17 @@ export function buildReviewsPayload({ meta, reviews, productId, productType, pag
   };
 }
 
-function summarizeProductReviews(ownReviews, productId) {
+function summarizeProductReviews(ownReviews, productId, now = Date.now()) {
   const ratingBreakdown = [0, 0, 0, 0, 0, 0];
   let ratingTotal = 0;
   let recommended = 0;
   let mediaCount = 0;
   let latestReviewDate = null;
+  let reviewsLast30Days = 0;
   let reviewsLast90Days = 0;
-  const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  const nowMs = toTimestamp(now);
+  const cutoff30 = nowMs - 30 * 24 * 60 * 60 * 1000;
+  const cutoff90 = nowMs - 90 * 24 * 60 * 60 * 1000;
 
   for (const review of ownReviews) {
     const rating = Math.max(0, Math.min(5, Math.round(toNumber(review.rating))));
@@ -432,7 +473,10 @@ function summarizeProductReviews(ownReviews, productId) {
         latestReviewDate = review.date;
       }
       const timestamp = Date.parse(review.date);
-      if (Number.isFinite(timestamp) && timestamp >= cutoff) {
+      if (Number.isFinite(timestamp) && timestamp >= cutoff30) {
+        reviewsLast30Days += 1;
+      }
+      if (Number.isFinite(timestamp) && timestamp >= cutoff90) {
         reviewsLast90Days += 1;
       }
     }
@@ -446,6 +490,7 @@ function summarizeProductReviews(ownReviews, productId) {
     percentRecommended: count > 0 ? round2((recommended / count) * 100) : 0,
     ratingBreakdown,
     latestReviewDate,
+    reviewsLast30Days,
     reviewsLast90Days,
     mediaCount,
     sampled: count > 0,
@@ -467,14 +512,24 @@ function normalizeReview(rawReview) {
   const optionReview =
     typeof rawReview.optionReview === 'string' ? rawReview.optionReview.trim() : '';
 
+  const storeIdCandidate =
+    rawReview.storeId != null
+      ? rawReview.storeId
+      : product.storeId != null
+        ? product.storeId
+        : '';
+
   return {
     id: rawReview.id != null ? String(rawReview.id) : '',
     productId: rawReview.productId != null ? String(rawReview.productId) : '',
+    storeId: storeIdCandidate != null ? String(storeIdCandidate) : '',
     rating: toNumber(rawReview.rating),
     recommend: Boolean(rawReview.recommend),
     title: truncateText(rawReview.title, 200),
     text: truncateText(combinedReview || optionReview, 600),
     date: truncateText(rawReview.dateCreated, 40),
+    fit: truncateText(rawReview.fit, 40),
+    recommendedFor: truncateText(rawReview.recommendedFor, 120),
     reviewerName: truncateText(reviewer.name, 80),
     reviewerType: truncateText(reviewer.type, 40),
     isCreatorReview: Boolean(rawReview.isReviewByCreator),
@@ -544,6 +599,302 @@ function collectReviewMedia(reviews, limit) {
   return media;
 }
 
+// --- P3: review momentum / freshness ---------------------------------------
+
+function summarizeMomentum(allReviews, ownReviews, now = Date.now()) {
+  // Prefer the product's own reviews so momentum reflects the listing, but
+  // fall back to the related feed when the own sample is too thin.
+  const useOwn = ownReviews.length >= REVIEWS_THEME_OWN_MIN;
+  const source = useOwn ? ownReviews : allReviews;
+  const scope = useOwn ? 'product' : 'category';
+  const nowMs = toTimestamp(now);
+  const nowDate = new Date(nowMs);
+  const monthBuckets = [];
+  const bucketByMonth = new Map();
+
+  for (let offset = REVIEWS_MOMENTUM_MONTHS - 1; offset >= 0; offset -= 1) {
+    const date = new Date(
+      Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth() - offset, 1)
+    );
+    const month = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+    const bucket = { month, count: 0 };
+    monthBuckets.push(bucket);
+    bucketByMonth.set(month, bucket);
+  }
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const cutoff30 = nowMs - 30 * dayMs;
+  const cutoff90 = nowMs - 90 * dayMs;
+  const cutoff365 = nowMs - 365 * dayMs;
+  let reviewsLast30Days = 0;
+  let reviewsLast90Days = 0;
+  let reviewsLast365Days = 0;
+  let latestReviewDate = null;
+  let recencyWeight = 0;
+  let reviewCount = 0;
+
+  for (const review of source) {
+    if (!review.date) {
+      continue;
+    }
+    const timestamp = Date.parse(review.date);
+    if (!Number.isFinite(timestamp) || timestamp > nowMs) {
+      continue;
+    }
+    reviewCount += 1;
+    if (!latestReviewDate || review.date > latestReviewDate) {
+      latestReviewDate = review.date;
+    }
+    if (timestamp >= cutoff30) {
+      reviewsLast30Days += 1;
+    }
+    if (timestamp >= cutoff90) {
+      reviewsLast90Days += 1;
+    }
+    if (timestamp >= cutoff365) {
+      reviewsLast365Days += 1;
+    }
+
+    const date = new Date(timestamp);
+    const month = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+    const bucket = bucketByMonth.get(month);
+    if (bucket) {
+      bucket.count += 1;
+    }
+    // Exponential recency weight: fresh reviews count most, ~half-life 6 months.
+    const ageDays = Math.max(0, (nowMs - timestamp) / dayMs);
+    recencyWeight += Math.exp(-ageDays / 180);
+  }
+
+  const recentReviews = monthBuckets
+    .slice(REVIEWS_MOMENTUM_MONTHS - 6)
+    .reduce((sum, bucket) => sum + bucket.count, 0);
+  const previousReviews = monthBuckets
+    .slice(0, REVIEWS_MOMENTUM_MONTHS - 6)
+    .reduce((sum, bucket) => sum + bucket.count, 0);
+  const trendPct =
+    previousReviews > 0
+      ? round2(((recentReviews - previousReviews) / previousReviews) * 100)
+      : recentReviews > 0
+        ? 100
+        : 0;
+
+  return {
+    scope,
+    sampleSize: reviewCount,
+    months: monthBuckets,
+    averagePerMonth: round2(reviewCount / REVIEWS_MOMENTUM_MONTHS),
+    recentReviews,
+    previousReviews,
+    trendPct,
+    reviewsLast30Days,
+    reviewsLast90Days,
+    reviewsLast365Days,
+    latestReviewDate,
+    freshnessScore: reviewCount > 0 ? Math.round((recencyWeight / reviewCount) * 100) : 0,
+  };
+}
+
+// --- P5: review themes / language ------------------------------------------
+
+const REVIEW_ASPECTS = [
+  {
+    label: 'Print quality',
+    terms: ['quality', 'print', 'printed', 'printing', 'color', 'colors', 'colour', 'vibrant', 'clear', 'sharp', 'resolution'],
+  },
+  {
+    label: 'Shipping & delivery',
+    terms: ['shipping', 'shipped', 'delivery', 'delivered', 'arrived', 'arrive', 'fast', 'quick', 'late', 'packaging', 'packed', 'package'],
+  },
+  {
+    label: 'Design & look',
+    terms: ['design', 'cute', 'beautiful', 'pretty', 'gorgeous', 'adorable', 'love', 'loved', 'perfect', 'awesome', 'amazing', 'style', 'looks'],
+  },
+  {
+    label: 'Size & fit',
+    terms: ['size', 'sizing', 'fit', 'fits', 'small', 'large', 'big', 'runs'],
+  },
+  {
+    label: 'Value & price',
+    terms: ['price', 'value', 'worth', 'expensive', 'cheap', 'affordable', 'money'],
+  },
+  {
+    label: 'Gift & occasion',
+    terms: ['gift', 'gifts', 'wedding', 'birthday', 'shower', 'anniversary', 'christmas', 'party', 'bride', 'bridal'],
+  },
+  {
+    label: 'Material & durability',
+    terms: ['material', 'paper', 'cardstock', 'fabric', 'cotton', 'soft', 'sturdy', 'durable', 'thick', 'thin'],
+  },
+  {
+    label: 'Customer service',
+    terms: ['service', 'support', 'helpful', 'response', 'refund', 'return', 'replacement', 'contact'],
+  },
+];
+
+const REVIEW_ASPECT_BY_TERM = new Map();
+for (const aspect of REVIEW_ASPECTS) {
+  for (const term of aspect.terms) {
+    if (!REVIEW_ASPECT_BY_TERM.has(term)) {
+      REVIEW_ASPECT_BY_TERM.set(term, aspect.label);
+    }
+  }
+}
+
+function summarizeThemes(allReviews, ownReviews) {
+  const useOwn = ownReviews.length >= REVIEWS_THEME_OWN_MIN;
+  const source = useOwn ? ownReviews : allReviews;
+  const scope = useOwn ? 'product' : 'category';
+  const termCounts = new Map();
+  const aspectStats = new Map();
+  let reviewCount = 0;
+
+  for (const review of source) {
+    const text = `${review.title} ${review.text}`.toLowerCase();
+    if (!text.trim()) {
+      continue;
+    }
+    reviewCount += 1;
+    const seenTerms = new Set();
+    const seenAspects = new Set();
+
+    for (const term of text.split(/[^a-z0-9']+/)) {
+      const cleaned = term.replace(/^'+|'+$/g, '');
+      if (
+        cleaned.length < 3 ||
+        cleaned.length > 24 ||
+        /^\d+$/.test(cleaned) ||
+        REVIEW_THEME_STOP_WORDS.has(cleaned) ||
+        seenTerms.has(cleaned)
+      ) {
+        continue;
+      }
+      seenTerms.add(cleaned);
+      termCounts.set(cleaned, (termCounts.get(cleaned) || 0) + 1);
+
+      const aspectLabel = REVIEW_ASPECT_BY_TERM.get(cleaned);
+      if (aspectLabel && !seenAspects.has(aspectLabel)) {
+        seenAspects.add(aspectLabel);
+        const stats = aspectStats.get(aspectLabel) || {
+          label: aspectLabel,
+          count: 0,
+          ratingTotal: 0,
+        };
+        stats.count += 1;
+        stats.ratingTotal += Math.max(0, Math.min(5, toNumber(review.rating)));
+        aspectStats.set(aspectLabel, stats);
+      }
+    }
+  }
+
+  const keywords = [...termCounts.entries()]
+    .map(([term, count]) => ({
+      term,
+      count,
+      share: percent(count, reviewCount),
+    }))
+    .sort(
+      (a, b) =>
+        b.count - a.count ||
+        Number(REVIEW_ASPECT_BY_TERM.has(b.term)) - Number(REVIEW_ASPECT_BY_TERM.has(a.term)) ||
+        a.term.localeCompare(b.term)
+    )
+    .slice(0, REVIEWS_THEME_LIMIT);
+
+  const aspects = [...aspectStats.values()]
+    .map((stats) => ({
+      label: stats.label,
+      count: stats.count,
+      share: percent(stats.count, reviewCount),
+      averageRating: stats.count > 0 ? round2(stats.ratingTotal / stats.count) : 0,
+    }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+
+  const quotes = source
+    .filter((review) => review.text && review.text.length >= 24)
+    .sort(
+      (left, right) =>
+        (Date.parse(right.date) || 0) - (Date.parse(left.date) || 0) ||
+        toNumber(right.rating) - toNumber(left.rating)
+    )
+    .slice(0, 3)
+    .map((review) => ({
+      text: truncateText(review.text, 180),
+      rating: toNumber(review.rating),
+      productTitle: review.productTitle,
+      date: review.date,
+    }));
+
+  return {
+    scope,
+    sampleSize: reviewCount,
+    keywords,
+    aspects,
+    quotes,
+  };
+}
+
+// --- P6: store trust --------------------------------------------------------
+
+function summarizeStoreTrust(reviews) {
+  const map = new Map();
+
+  for (const review of reviews) {
+    const storeId = sanitizeStoreId(review.storeId);
+    if (!storeId) {
+      continue;
+    }
+    const entry = map.get(storeId) || {
+      storeId,
+      reviewCount: 0,
+      ratingTotal: 0,
+      recommended: 0,
+      mediaCount: 0,
+      latestReviewDate: null,
+    };
+    entry.reviewCount += 1;
+    entry.ratingTotal += Math.max(0, Math.min(5, toNumber(review.rating)));
+    if (review.recommend) {
+      entry.recommended += 1;
+    }
+    entry.mediaCount += review.media.length;
+    if (review.date && (!entry.latestReviewDate || review.date > entry.latestReviewDate)) {
+      entry.latestReviewDate = review.date;
+    }
+    map.set(storeId, entry);
+  }
+
+  return [...map.values()]
+    .map((entry) => ({
+      storeId: entry.storeId,
+      reviewCount: entry.reviewCount,
+      averageRating: round2(entry.ratingTotal / entry.reviewCount),
+      percentRecommended: round2((entry.recommended / entry.reviewCount) * 100),
+      mediaCount: entry.mediaCount,
+      latestReviewDate: entry.latestReviewDate,
+    }))
+    .sort((a, b) => b.reviewCount - a.reviewCount || b.averageRating - a.averageRating)
+    .slice(0, REVIEWS_STORE_LIMIT);
+}
+
+function summarizeUgc(media) {
+  const photos = media.filter((item) => !item.isVideo).length;
+  const videos = media.filter((item) => item.isVideo).length;
+  return {
+    total: media.length,
+    photos,
+    videos,
+  };
+}
+
+function sanitizeStoreId(value) {
+  if (value == null) {
+    return '';
+  }
+  const trimmed = String(value).trim();
+  return /^\d{3,20}$/.test(trimmed) ? trimmed : '';
+}
+
 function normalizeRatingBreakdown(rawBreakdown) {
   const values = Array.isArray(rawBreakdown) ? rawBreakdown : [];
   return [0, 1, 2, 3, 4, 5].map((index) => Math.max(0, toNumber(values[index])));
@@ -575,7 +926,7 @@ function clampReviewsPages(value) {
 
 function buildReviewsCacheKey(url, { productId, productType, pages }) {
   const key = new URL(url.origin);
-  key.pathname = '/__cache/zazzle-reviews';
+  key.pathname = '/__cache/zazzle-reviews-v3';
   key.searchParams.set('productId', productId);
   if (productType) {
     key.searchParams.set('productType', productType);
@@ -1188,6 +1539,14 @@ function parseCacheTtl(value, fallback = DEFAULT_CACHE_TTL_SECONDS) {
 function toNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toTimestamp(value) {
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  const parsed = typeof value === 'number' ? value : Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Date.now();
 }
 
 function buildCorsHeaders(origin) {

@@ -565,6 +565,7 @@ function sampleReviewsResponse() {
         r1: {
           id: 'r1',
           productId: '256302943466835132',
+          storeId: '501',
           rating: 5,
           recommend: true,
           title: 'Beautiful',
@@ -589,6 +590,7 @@ function sampleReviewsResponse() {
         r2: {
           id: 'r2',
           productId: '256302943466835132',
+          storeId: '501',
           rating: 4,
           recommend: true,
           dateCreated: '2026-01-01T00:00:00.000',
@@ -597,6 +599,7 @@ function sampleReviewsResponse() {
         r3: {
           id: 'r3',
           productId: '999',
+          storeId: '999',
           rating: 3,
           recommend: false,
           dateCreated: '2025-01-01T00:00:00.000',
@@ -760,4 +763,114 @@ test('reviews endpoint maps upstream 403 to a blocked 502', async (t) => {
   assert.equal(response.status, 502);
   const body = await response.json();
   assert.equal(body.code, 'upstream_blocked');
+});
+
+test('buildReviewsPayload computes product momentum from review dates', () => {
+  const now = Date.parse('2026-06-15T00:00:00.000Z');
+  const day = 24 * 60 * 60 * 1000;
+  const reviews = [10, 45, 100, 250].map((daysAgo, index) => ({
+    id: `m${index}`,
+    productId: '123456789012345678',
+    storeId: '501',
+    rating: 5,
+    recommend: true,
+    dateCreated: new Date(now - daysAgo * day).toISOString(),
+    mediaItems: [],
+  }));
+
+  const payload = buildReviewsPayload({
+    meta: {},
+    reviews,
+    productId: '123456789012345678',
+    now,
+  });
+
+  assert.equal(payload.momentum.scope, 'product');
+  assert.equal(payload.momentum.sampleSize, 4);
+  assert.equal(payload.momentum.reviewsLast30Days, 1);
+  assert.equal(payload.momentum.reviewsLast90Days, 2);
+  assert.equal(payload.momentum.reviewsLast365Days, 4);
+  assert.equal(payload.momentum.months.length, 12);
+  assert.equal(payload.momentum.months.at(-1).month, '2026-06');
+  assert.equal(payload.momentum.recentReviews, 3);
+  assert.equal(payload.momentum.previousReviews, 1);
+  assert.equal(payload.momentum.trendPct, 200);
+  assert.ok(payload.momentum.freshnessScore > 0);
+  assert.ok(payload.momentum.freshnessScore < 100);
+});
+
+test('buildReviewsPayload extracts themes from the product review language', () => {
+  const reviews = [
+    {
+      id: 't1',
+      productId: '123456789012345678',
+      storeId: '501',
+      rating: 5,
+      recommend: true,
+      combinedReview: 'The print quality is amazing and the colors are vibrant!',
+      dateCreated: '2026-05-01T00:00:00.000Z',
+      mediaItems: [],
+    },
+    {
+      id: 't2',
+      productId: '123456789012345678',
+      storeId: '501',
+      rating: 4,
+      recommend: true,
+      combinedReview: 'Fast shipping and lovely packaging, arrived early.',
+      dateCreated: '2026-04-01T00:00:00.000Z',
+      mediaItems: [],
+    },
+    {
+      id: 't3',
+      productId: '123456789012345678',
+      storeId: '501',
+      rating: 5,
+      recommend: true,
+      combinedReview: 'Beautiful design, it made a perfect gift.',
+      dateCreated: '2026-03-01T00:00:00.000Z',
+      mediaItems: [],
+    },
+  ];
+
+  const payload = buildReviewsPayload({
+    meta: {},
+    reviews,
+    productId: '123456789012345678',
+    now: Date.parse('2026-06-15T00:00:00.000Z'),
+  });
+
+  assert.equal(payload.themes.scope, 'product');
+  assert.equal(payload.themes.sampleSize, 3);
+  const labels = payload.themes.aspects.map((aspect) => aspect.label);
+  assert.ok(labels.includes('Print quality'));
+  assert.ok(labels.includes('Shipping & delivery'));
+  assert.ok(labels.includes('Design & look'));
+  const terms = payload.themes.keywords.map((keyword) => keyword.term);
+  assert.ok(terms.includes('colors'));
+  assert.ok(terms.includes('design'));
+  assert.equal(payload.themes.quotes.length, 3);
+});
+
+test('buildReviewsPayload aggregates store review trust by storeId', () => {
+  const reviews = [
+    { id: 's1', productId: 'p', storeId: '111', rating: 5, recommend: true, mediaItems: [] },
+    { id: 's2', productId: 'p', storeId: '111', rating: 4, recommend: true, mediaItems: [] },
+    { id: 's3', productId: 'p', storeId: '222', rating: 3, recommend: false, mediaItems: [] },
+  ];
+
+  const payload = buildReviewsPayload({ meta: {}, reviews, productId: 'other' });
+
+  assert.equal(payload.stores.length, 2);
+  assert.deepEqual(payload.stores[0], {
+    storeId: '111',
+    reviewCount: 2,
+    averageRating: 4.5,
+    percentRecommended: 100,
+    mediaCount: 0,
+    latestReviewDate: null,
+  });
+  assert.equal(payload.stores[1].storeId, '222');
+  assert.equal(payload.stores[1].averageRating, 3);
+  assert.equal(payload.stores[1].percentRecommended, 0);
 });

@@ -67,6 +67,9 @@
         // stays fast; each product costs one upstream reviews request.
         const ZAZZLE_REVIEWS_TOP_PRODUCTS = 3;
         const ZAZZLE_REVIEWS_PAGES = 1;
+        // Bump when the reviews payload changes so browsers fetch the new shape
+        // instead of reusing a cached response from the previous version.
+        const ZAZZLE_REVIEWS_PAYLOAD_VERSION = '3';
         const ZAZZLE_PLACEHOLDER_IMAGE =
             'data:image/svg+xml;charset=UTF-8,' +
             encodeURIComponent(
@@ -129,6 +132,10 @@
         function toFiniteNumber(value) {
             const number = typeof value === 'number' ? value : Number(value);
             return Number.isFinite(number) ? number : 0;
+        }
+
+        function clampNumber(value, min, max) {
+            return Math.max(min, Math.min(max, toFiniteNumber(value)));
         }
 
         function toSafeHttpUrl(value) {
@@ -216,6 +223,7 @@
                 ? analysis.stores
                     .filter((store) => store && typeof store === 'object')
                     .map((store) => ({
+                        storeId: store.storeId != null ? String(store.storeId) : '',
                         name: toTrimmedString(store.name) || 'Unknown store',
                         storeHandle: toTrimmedString(store.storeHandle),
                         storeImageUrl: toSafeHttpUrl(store.storeImageUrl),
@@ -386,6 +394,7 @@
                 percentRecommended: 0,
                 ratingBreakdown: [0, 0, 0, 0, 0, 0],
                 latestReviewDate: null,
+                reviewsLast30Days: 0,
                 reviewsLast90Days: 0,
                 mediaCount: 0,
                 sampled: false,
@@ -402,9 +411,128 @@
                 percentRecommended: Math.max(0, Math.min(100, toFiniteNumber(product.percentRecommended))),
                 ratingBreakdown: normalizeRatingBreakdown(product.ratingBreakdown),
                 latestReviewDate: toTrimmedString(product.latestReviewDate) || null,
+                reviewsLast30Days: Math.max(0, toFiniteNumber(product.reviewsLast30Days)),
                 reviewsLast90Days: Math.max(0, toFiniteNumber(product.reviewsLast90Days)),
                 mediaCount: Math.max(0, toFiniteNumber(product.mediaCount)),
                 sampled: Boolean(product.sampled) || count > 0,
+            };
+        }
+
+        function emptyReviewMomentum() {
+            return {
+                scope: 'category',
+                sampleSize: 0,
+                months: [],
+                averagePerMonth: 0,
+                recentReviews: 0,
+                previousReviews: 0,
+                trendPct: 0,
+                reviewsLast30Days: 0,
+                reviewsLast90Days: 0,
+                reviewsLast365Days: 0,
+                latestReviewDate: null,
+                freshnessScore: 0,
+            };
+        }
+
+        function normalizeReviewMomentum(rawMomentum) {
+            const momentum = rawMomentum && typeof rawMomentum === 'object' ? rawMomentum : {};
+            return {
+                scope: momentum.scope === 'product' ? 'product' : 'category',
+                sampleSize: Math.max(0, toFiniteNumber(momentum.sampleSize)),
+                months: Array.isArray(momentum.months)
+                    ? momentum.months
+                        .filter((month) => month && typeof month === 'object')
+                        .map((month) => ({
+                            month: toTrimmedString(month.month),
+                            count: Math.max(0, toFiniteNumber(month.count)),
+                        }))
+                        .filter((month) => month.month)
+                    : [],
+                averagePerMonth: Math.max(0, toFiniteNumber(momentum.averagePerMonth)),
+                recentReviews: Math.max(0, toFiniteNumber(momentum.recentReviews)),
+                previousReviews: Math.max(0, toFiniteNumber(momentum.previousReviews)),
+                trendPct: toFiniteNumber(momentum.trendPct),
+                reviewsLast30Days: Math.max(0, toFiniteNumber(momentum.reviewsLast30Days)),
+                reviewsLast90Days: Math.max(0, toFiniteNumber(momentum.reviewsLast90Days)),
+                reviewsLast365Days: Math.max(0, toFiniteNumber(momentum.reviewsLast365Days)),
+                latestReviewDate: toTrimmedString(momentum.latestReviewDate) || null,
+                freshnessScore: Math.max(0, Math.min(100, toFiniteNumber(momentum.freshnessScore))),
+            };
+        }
+
+        function emptyReviewThemes() {
+            return {
+                scope: 'category',
+                sampleSize: 0,
+                keywords: [],
+                aspects: [],
+                quotes: [],
+            };
+        }
+
+        function normalizeReviewThemes(rawThemes) {
+            const themes = rawThemes && typeof rawThemes === 'object' ? rawThemes : {};
+            return {
+                scope: themes.scope === 'product' ? 'product' : 'category',
+                sampleSize: Math.max(0, toFiniteNumber(themes.sampleSize)),
+                keywords: Array.isArray(themes.keywords)
+                    ? themes.keywords
+                        .filter((keyword) => keyword && typeof keyword === 'object')
+                        .map((keyword) => ({
+                            term: toTrimmedString(keyword.term),
+                            count: Math.max(0, toFiniteNumber(keyword.count)),
+                            share: Math.max(0, toFiniteNumber(keyword.share)),
+                        }))
+                        .filter((keyword) => keyword.term)
+                    : [],
+                aspects: Array.isArray(themes.aspects)
+                    ? themes.aspects
+                        .filter((aspect) => aspect && typeof aspect === 'object')
+                        .map((aspect) => ({
+                            label: toTrimmedString(aspect.label),
+                            count: Math.max(0, toFiniteNumber(aspect.count)),
+                            share: Math.max(0, toFiniteNumber(aspect.share)),
+                            averageRating: Math.max(0, Math.min(5, toFiniteNumber(aspect.averageRating))),
+                        }))
+                        .filter((aspect) => aspect.label)
+                    : [],
+                quotes: Array.isArray(themes.quotes)
+                    ? themes.quotes
+                        .filter((quote) => quote && typeof quote === 'object')
+                        .map((quote) => ({
+                            text: toTrimmedString(quote.text),
+                            rating: Math.max(0, Math.min(5, toFiniteNumber(quote.rating))),
+                            productTitle: toTrimmedString(quote.productTitle),
+                            date: toTrimmedString(quote.date),
+                        }))
+                        .filter((quote) => quote.text)
+                    : [],
+            };
+        }
+
+        function normalizeReviewStores(rawStores) {
+            return Array.isArray(rawStores)
+                ? rawStores
+                    .filter((store) => store && typeof store === 'object')
+                    .map((store) => ({
+                        storeId: store.storeId != null ? String(store.storeId) : '',
+                        reviewCount: Math.max(0, toFiniteNumber(store.reviewCount)),
+                        averageRating: Math.max(0, Math.min(5, toFiniteNumber(store.averageRating))),
+                        percentRecommended: Math.max(0, Math.min(100, toFiniteNumber(store.percentRecommended))),
+                        mediaCount: Math.max(0, toFiniteNumber(store.mediaCount)),
+                        latestReviewDate: toTrimmedString(store.latestReviewDate) || null,
+                    }))
+                    .filter((store) => store.storeId)
+                : [];
+        }
+
+        function normalizeReviewUgc(rawUgc) {
+            const ugc = rawUgc && typeof rawUgc === 'object' ? rawUgc : {};
+            return {
+                total: Math.max(0, toFiniteNumber(ugc.total)),
+                photos: Math.max(0, toFiniteNumber(ugc.photos)),
+                videos: Math.max(0, toFiniteNumber(ugc.videos)),
             };
         }
 
@@ -413,6 +541,10 @@
             return {
                 summary: normalizeReviewSummary(data.summary),
                 product: normalizeProductReview(data.product, productId),
+                momentum: normalizeReviewMomentum(data.momentum),
+                themes: normalizeReviewThemes(data.themes),
+                stores: normalizeReviewStores(data.stores),
+                ugc: normalizeReviewUgc(data.ugc),
                 reviews: Array.isArray(data.reviews)
                     ? data.reviews.filter((review) => review && typeof review === 'object')
                     : [],
@@ -520,6 +652,148 @@
                 get reviewSeedTitle() {
                     const seed = this.reviewTargets[0];
                     return seed ? seed.titleSeo : 'the top product';
+                },
+
+                get reviewMomentum() {
+                    return this.reviewSeed ? this.reviewSeed.momentum : emptyReviewMomentum();
+                },
+
+                get reviewMomentumMax() {
+                    return this.reviewMomentum.months.reduce(
+                        (max, month) => Math.max(max, month.count),
+                        0
+                    );
+                },
+
+                get reviewThemes() {
+                    return this.reviewSeed ? this.reviewSeed.themes : emptyReviewThemes();
+                },
+
+                get reviewStores() {
+                    return this.reviewSeed ? this.reviewSeed.stores : [];
+                },
+
+                get reviewUgc() {
+                    return this.reviewSeed
+                        ? this.reviewSeed.ugc
+                        : { total: 0, photos: 0, videos: 0 };
+                },
+
+                get reviewMedia() {
+                    return this.reviewSeed ? this.reviewSeed.media : [];
+                },
+
+                get opportunity() {
+                    const top = this.topProduct;
+                    const topRevenue = top ? toFiniteNumber(top.stats.estimatedRevenue) : 0;
+                    const topSales = top ? toFiniteNumber(top.stats.sales) : 0;
+                    const averageSales = toFiniteNumber(this.market.averageSales);
+
+                    // Log scales keep one viral or one huge niche from pinning
+                    // every score to 0 or 100.
+                    const demandBase = Math.max(topRevenue, topSales * 20, averageSales * 40, 1);
+                    const demandScore = clampNumber(
+                        (Math.log10(1 + demandBase) / Math.log10(1 + 5000)) * 100,
+                        0,
+                        100
+                    );
+                    const saturationScore = clampNumber(
+                        (Math.log10(1 + this.market.saturation) / Math.log10(1 + 250000)) * 100,
+                        0,
+                        100
+                    );
+                    const categoryMoat = clampNumber(
+                        (Math.log10(1 + this.reviewHealth.totalReviews) / Math.log10(1 + 100000)) * 100,
+                        0,
+                        100
+                    );
+                    const own = this.reviewHealthProduct;
+                    const ownCountScore = own.sampled
+                        ? clampNumber((Math.log10(1 + own.ownReviewCount) / 2) * 100, 0, 100)
+                        : 0;
+                    const ownRatingFactor = own.averageRating > 0
+                        ? 0.5 + (own.averageRating / 5) * 0.5
+                        : 0.75;
+                    const productMoat = clampNumber(ownCountScore * ownRatingFactor, 0, 100);
+                    const reviewMoat = Math.round(categoryMoat * 0.55 + productMoat * 0.45);
+                    const competitionScore = Math.round(saturationScore * 0.5 + reviewMoat * 0.5);
+                    const score = Math.round(
+                        clampNumber(
+                            demandScore * 0.45 +
+                            (100 - competitionScore) * 0.35 +
+                            (100 - reviewMoat) * 0.2,
+                            0,
+                            100
+                        )
+                    );
+
+                    let label = 'Crowded';
+                    if (score >= 70) {
+                        label = 'Sweet spot';
+                    } else if (score >= 50) {
+                        label = 'Worth testing';
+                    } else if (score >= 30) {
+                        label = 'Competitive';
+                    }
+
+                    return {
+                        score,
+                        label,
+                        demandScore: Math.round(demandScore),
+                        competitionScore,
+                        reviewMoat,
+                    };
+                },
+
+                reviewScopeLabel(scope) {
+                    return scope === 'product' ? 'this product' : 'related review feed';
+                },
+
+                get opportunityFactors() {
+                    const score = this.opportunity;
+                    return [
+                        {
+                            label: 'Demand',
+                            value: score.demandScore,
+                            hint: 'Top-product revenue and sales',
+                        },
+                        {
+                            label: 'Competition',
+                            value: score.competitionScore,
+                            hint: 'Search saturation plus review moat',
+                        },
+                        {
+                            label: 'Review moat',
+                            value: score.reviewMoat,
+                            hint: 'Category pool and top-product reviews',
+                        },
+                    ];
+                },
+
+                momentumBarHeight(count) {
+                    const max = this.reviewMomentumMax;
+                    if (max <= 0) {
+                        return '4%';
+                    }
+                    return `${Math.max(4, Math.round((count / max) * 100))}%`;
+                },
+
+                storeReviewFor(storeId) {
+                    const id = storeId == null ? '' : String(storeId);
+                    if (!id) {
+                        return null;
+                    }
+                    let best = null;
+                    for (const data of Object.values(this.reviewData)) {
+                        if (!data || !Array.isArray(data.stores)) {
+                            continue;
+                        }
+                        const match = data.stores.find((store) => store.storeId === id);
+                        if (match && (!best || match.reviewCount > best.reviewCount)) {
+                            best = match;
+                        }
+                    }
+                    return best;
                 },
 
                 get suggestionGroups() {
@@ -655,6 +929,7 @@
                         const query = [
                             `productId=${encodeURIComponent(product.id)}`,
                             `pages=${encodeURIComponent(ZAZZLE_REVIEWS_PAGES)}`,
+                            `rev=${encodeURIComponent(ZAZZLE_REVIEWS_PAYLOAD_VERSION)}`,
                         ];
                         if (product.productType) {
                             query.push(`productType=${encodeURIComponent(product.productType)}`);
@@ -1272,6 +1547,55 @@
         </div>
 
         <section x-show="!loading && products.length > 0" class="bg-gray-800 rounded-2xl shadow-lg p-6 mb-8"
+            aria-label="Niche opportunity">
+            <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h2 class="text-xl font-bold text-white">Niche Opportunity</h2>
+                    <p class="text-sm text-gray-400">
+                        Demand, saturation and review-barrier score from this search plus the sampled review feed.
+                    </p>
+                </div>
+                <span
+                    class="rounded-full border border-gray-600 bg-gray-700/50 px-3 py-1 text-xs font-semibold text-gray-300">
+                    Score 0&ndash;100
+                </span>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 lg:grid-cols-4">
+                <div class="rounded-xl bg-gray-700/40 p-4">
+                    <div class="text-[10px] uppercase tracking-wide text-gray-400">Opportunity score</div>
+                    <div class="text-4xl font-bold"
+                        :class="opportunity.score >= 70 ? 'text-emerald-400' : opportunity.score >= 50 ? 'text-sky-400' : opportunity.score >= 30 ? 'text-amber-400' : 'text-rose-400'"
+                        x-text="opportunity.score"></div>
+                    <div class="mt-1 text-sm font-semibold"
+                        :class="opportunity.score >= 70 ? 'text-emerald-300' : opportunity.score >= 50 ? 'text-sky-300' : opportunity.score >= 30 ? 'text-amber-300' : 'text-rose-300'"
+                        x-text="opportunity.label"></div>
+                    <p class="mt-2 text-[11px] text-gray-500">
+                        Higher means real demand with a weaker review moat. Review data is a sample, not a census.
+                    </p>
+                </div>
+
+                <div class="rounded-xl bg-gray-700/40 p-4 lg:col-span-3">
+                    <div class="space-y-4">
+                        <template x-for="factor in opportunityFactors" :key="factor.label">
+                            <div>
+                                <div class="mb-1 flex items-center justify-between gap-2 text-xs">
+                                    <span class="font-medium text-gray-200" x-text="factor.label"></span>
+                                    <span class="font-semibold text-white" x-text="factor.value + ' / 100'"></span>
+                                </div>
+                                <div class="h-2 overflow-hidden rounded-full bg-gray-900/60">
+                                    <div class="h-full rounded-full bg-blue-400"
+                                        :style="'width: ' + factor.value + '%'"></div>
+                                </div>
+                                <div class="mt-1 text-[10px] text-gray-500" x-text="factor.hint"></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section x-show="!loading && products.length > 0" class="bg-gray-800 rounded-2xl shadow-lg p-6 mb-8"
             aria-label="Review health">
             <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -1377,6 +1701,138 @@
                                 :class="badge.classes" x-text="badge.label"></span>
                         </template>
                     </div>
+                </div>
+            </div>
+
+            <div x-show="!reviewLoading && reviewSeed" class="mt-4 rounded-xl bg-gray-700/40 p-4"
+                aria-label="Review momentum">
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                        <div class="text-sm font-medium text-gray-300">
+                            Review momentum
+                            <span class="text-xs font-normal text-gray-500"
+                                x-text="'(' + reviewScopeLabel(reviewMomentum.scope) + ')'"></span>
+                        </div>
+                        <p class="text-[11px] text-gray-500">
+                            Monthly review volume over the last 12 months.
+                        </p>
+                    </div>
+                    <div class="text-right text-xs text-gray-400">
+                        <div>Freshness
+                            <span class="font-semibold text-sky-300"
+                                x-text="formatNumber(reviewMomentum.freshnessScore) + ' / 100'"></span>
+                        </div>
+                        <div x-show="reviewMomentum.latestReviewDate"
+                            x-text="'Latest ' + formatReviewDate(reviewMomentum.latestReviewDate)"></div>
+                    </div>
+                </div>
+
+                <div class="mt-4 flex h-24 items-end gap-1">
+                    <template x-for="month in reviewMomentum.months" :key="month.month">
+                        <div class="flex h-full flex-1 items-end">
+                            <div class="w-full rounded-t bg-sky-500/70 transition hover:bg-sky-400"
+                                :style="'height: ' + momentumBarHeight(month.count)"
+                                :title="month.month + ': ' + month.count + ' reviews'"></div>
+                        </div>
+                    </template>
+                </div>
+                <div class="mt-1 flex gap-1">
+                    <template x-for="month in reviewMomentum.months" :key="`label-${month.month}`">
+                        <div class="flex-1 text-center text-[9px] text-gray-500"
+                            x-text="month.month.slice(5)"></div>
+                    </template>
+                </div>
+
+                <div class="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                    <div class="rounded-lg bg-gray-900/40 px-3 py-2">
+                        <div class="text-[10px] uppercase tracking-wide text-gray-500">Last 30 days</div>
+                        <div class="font-bold text-white" x-text="formatNumber(reviewMomentum.reviewsLast30Days)"></div>
+                    </div>
+                    <div class="rounded-lg bg-gray-900/40 px-3 py-2">
+                        <div class="text-[10px] uppercase tracking-wide text-gray-500">Last 90 days</div>
+                        <div class="font-bold text-white" x-text="formatNumber(reviewMomentum.reviewsLast90Days)"></div>
+                    </div>
+                    <div class="rounded-lg bg-gray-900/40 px-3 py-2">
+                        <div class="text-[10px] uppercase tracking-wide text-gray-500">Last 12 months</div>
+                        <div class="font-bold text-white" x-text="formatNumber(reviewMomentum.reviewsLast365Days)"></div>
+                    </div>
+                    <div class="rounded-lg bg-gray-900/40 px-3 py-2">
+                        <div class="text-[10px] uppercase tracking-wide text-gray-500">6-month trend</div>
+                        <div class="font-bold"
+                            :class="reviewMomentum.trendPct >= 0 ? 'text-emerald-300' : 'text-rose-300'"
+                            x-text="(reviewMomentum.trendPct >= 0 ? '+' : '') + formatShare(reviewMomentum.trendPct)"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div x-show="!reviewLoading && reviewSeed" class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3"
+                aria-label="Review language and customer media">
+                <div class="rounded-xl bg-gray-700/40 p-4">
+                    <div class="text-sm font-medium text-gray-300">
+                        Review themes
+                        <span class="text-xs font-normal text-gray-500"
+                            x-text="'(' + reviewScopeLabel(reviewThemes.scope) + ', ' + formatNumber(reviewThemes.sampleSize) + ' reviews)'"></span>
+                    </div>
+                    <div class="mt-3 flex flex-wrap gap-1">
+                        <template x-for="aspect in reviewThemes.aspects" :key="aspect.label">
+                            <span
+                                class="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300"
+                                :title="formatNumber(aspect.count) + ' mentions · ' + formatRating(aspect.averageRating) + '★ average'"
+                                x-text="aspect.label + ' · ' + formatNumber(aspect.count)"></span>
+                        </template>
+                    </div>
+                    <div class="mt-3 flex flex-wrap gap-1">
+                        <template x-for="keyword in reviewThemes.keywords" :key="keyword.term">
+                            <span class="rounded-full bg-gray-900/50 px-2 py-0.5 text-[10px] text-gray-300"
+                                x-text="keyword.term"></span>
+                        </template>
+                    </div>
+                    <p x-show="reviewThemes.aspects.length === 0 && reviewThemes.keywords.length === 0"
+                        class="mt-3 text-xs text-gray-500">No review language was returned for this sample.</p>
+                </div>
+
+                <div class="rounded-xl bg-gray-700/40 p-4">
+                    <div class="text-sm font-medium text-gray-300">What customers say</div>
+                    <div class="mt-3 space-y-3">
+                        <template x-for="(quote, quoteIndex) in reviewThemes.quotes" :key="`${quoteIndex}-${quote.date}`">
+                            <blockquote class="rounded-lg border border-gray-700 bg-gray-900/40 px-3 py-2">
+                                <p class="text-xs leading-relaxed text-gray-300 line-clamp-3"
+                                    x-text="'“' + quote.text + '”'"></p>
+                                <footer class="mt-1 text-[10px] text-gray-500">
+                                    <span class="font-semibold text-amber-300"
+                                        x-text="formatRating(quote.rating) + '★'"></span>
+                                    <span x-text="quote.date ? ' · ' + formatReviewDate(quote.date) : ''"></span>
+                                </footer>
+                            </blockquote>
+                        </template>
+                    </div>
+                    <p x-show="reviewThemes.quotes.length === 0" class="mt-3 text-xs text-gray-500">
+                        No written review excerpts were returned for this sample.
+                    </p>
+                </div>
+
+                <div class="rounded-xl bg-gray-700/40 p-4">
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="text-sm font-medium text-gray-300">Customer photos &amp; videos</div>
+                        <div class="text-[10px] text-gray-500"
+                            x-text="formatNumber(reviewUgc.total) + ' media · ' + formatNumber(reviewUgc.videos) + ' video'"></div>
+                    </div>
+                    <div class="mt-3 grid grid-cols-3 gap-2">
+                        <template x-for="(item, mediaIndex) in reviewMedia" :key="`${item.reviewId}-${mediaIndex}-${item.url}`">
+                            <a :href="item.url" target="_blank" rel="noopener noreferrer"
+                                class="group relative block aspect-square overflow-hidden rounded-lg border border-gray-700 bg-gray-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                                :title="item.productTitle || 'Customer media'">
+                                <img :src="item.thumbnailUrl || item.url" :alt="item.productTitle || 'Customer review media'"
+                                    loading="lazy" decoding="async" referrerpolicy="no-referrer"
+                                    class="h-full w-full object-cover transition group-hover:scale-105">
+                                <span x-show="item.isVideo"
+                                    class="absolute bottom-1 left-1 rounded bg-black/70 px-1 py-0.5 text-[9px] font-semibold uppercase text-white">Video</span>
+                            </a>
+                        </template>
+                    </div>
+                    <p x-show="reviewMedia.length === 0" class="mt-3 text-xs text-gray-500">
+                        No customer photos or videos were returned for this sample.
+                    </p>
                 </div>
             </div>
         </section>
@@ -1637,7 +2093,8 @@
                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
                     <h2 class="text-2xl font-bold text-white mb-4">Top Stores Analysis</h2>
                     <p class="text-gray-400 mb-6">Discover the dominant stores in this niche based on estimated
-                        monthly gross revenue, sales, conversion rate and product count from the search results.</p>
+                        monthly gross revenue, sales, conversion rate and product count from the search results.
+                        Store review ratings come from the sampled review feed where available.</p>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm text-left text-gray-300">
                             <caption class="sr-only">Store performance from the analyzed search results</caption>
@@ -1645,6 +2102,7 @@
                                 <tr>
                                     <th scope="col" class="px-4 py-3">Rank</th>
                                     <th scope="col" class="px-4 py-3">Store Name</th>
+                                    <th scope="col" class="px-4 py-3">Store Reviews</th>
                                     <th scope="col" class="px-4 py-3 text-right">Est. Gross Revenue/Mo</th>
                                     <th scope="col" class="px-4 py-3 text-right">Sales/Mo</th>
                                     <th scope="col" class="px-4 py-3 text-right">Products</th>
@@ -1661,6 +2119,20 @@
                                             <div class="font-bold text-white" x-text="store.name"></div>
                                             <div x-show="store.topProductTitle" class="text-xs text-gray-500 line-clamp-1"
                                                 x-text="'Top: ' + store.topProductTitle"></div>
+                                        </td>
+                                        <td class="px-4 py-4">
+                                            <template x-if="storeReviewFor(store.storeId)">
+                                                <div>
+                                                    <div class="font-semibold text-amber-300"
+                                                        x-text="formatRating(storeReviewFor(store.storeId).averageRating) + '★'"></div>
+                                                    <div class="text-xs text-gray-400"
+                                                        x-text="formatNumber(storeReviewFor(store.storeId).reviewCount) + ' reviews · ' + formatShare(storeReviewFor(store.storeId).percentRecommended)"></div>
+                                                </div>
+                                            </template>
+                                            <template x-if="!storeReviewFor(store.storeId)">
+                                                <span class="text-gray-500"
+                                                    title="Store was not present in the sampled review feed">—</span>
+                                            </template>
                                         </td>
                                         <td class="px-4 py-4 text-right font-semibold text-green-400"
                                             x-text="formatCurrency(store.estimatedRevenue)"></td>

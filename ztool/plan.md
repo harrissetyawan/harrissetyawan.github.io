@@ -94,6 +94,23 @@ Field tetap `estimatedRevenue`; hanya label UI dan dokumentasi yang berubah.
 - Frontend: Review Health card dari seed top product; badge review hanya untuk top 3 produk (lazy-load).
 - Fallback: review UI disembunyikan jika endpoint gagal; produk tanpa review tetap menampilkan konteks kategori.
 
+## 6. Momentum, opportunity, language, store trust (P3–P6)
+
+- **P3 — momentum/freshness**: worker menambahkan `momentum` (12 bucket bulanan,
+  hitungan 30/90/365 hari, tren 6 bulan, `freshnessScore`). Frontend menampilkan
+  bar chart + ringkasan di Review Health.
+- **P4 — opportunity/saturation**: skor 0–100 dihitung frontend dari demand
+  (revenue/sales top product), saturasi pencarian, dan review moat (kategori +
+  review top product). Kartu baru menampilkan skor, label, dan komponennya.
+- **P5 — review language/UGC**: worker menambahkan `themes` (keyword, aspect,
+  kutipan) dan `ugc` (jumlah foto/video). Frontend menampilkan chip tema,
+  kutipan pelanggan, dan galeri media.
+- **P6 — store trust**: worker menambahkan `stores` (agregasi review per
+  `storeId`); frontend join ke tabel Top Stores dan menampilkan rating + jumlah
+  review bila store ada di sample.
+- Semua data review tetap **sample-based**; label UI menjelaskan scope product
+  vs related feed. Tidak ada AI/API key.
+
 ## Verifikasi
 
 1. `cd ztool/worker && node --test`
@@ -117,6 +134,10 @@ Field tetap `estimatedRevenue`; hanya label UI dan dokumentasi yang berubah.
 - [ ] Semua label revenue memakai `Est. gross revenue/mo`.
 - [ ] Review Health card dan social proof top 3 produk tampil.
 - [ ] `/api/reviews` mengembalikan summary, product, preview, dan cache 6 jam.
+- [ ] Momentum review tampil dengan bucket bulanan dan freshness score.
+- [ ] Skor opportunity/saturation tampil beserta komponen demand/competition/moat.
+- [ ] Tema review, kutipan, dan galeri UGC tampil atau fallback yang jelas.
+- [ ] Kolom Store Reviews di Top Stores terisi saat `storeId` ada di sample.
 - [ ] Verdict niche dan caveat data tampil.
 - [ ] Filter produk dan profit estimator berfungsi.
 - [ ] Watchlist bisa save/load/remove dan membandingkan minimal 2 niche.
