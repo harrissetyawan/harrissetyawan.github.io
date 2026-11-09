@@ -513,11 +513,9 @@ function normalizeReview(rawReview) {
     typeof rawReview.optionReview === 'string' ? rawReview.optionReview.trim() : '';
 
   const storeIdCandidate =
-    rawReview.storeId != null
-      ? rawReview.storeId
-      : product.storeId != null
-        ? product.storeId
-        : '';
+    [rawReview.storeId, product.storeId].find(
+      (value) => value != null && String(value).trim() !== ''
+    ) || '';
 
   return {
     id: rawReview.id != null ? String(rawReview.id) : '',
