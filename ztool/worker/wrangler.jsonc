@@ -9,6 +9,7 @@
   "vars": {
     "ALLOWED_ORIGIN": "*",
     "UPSTREAM_TIMEOUT_MS": "15000",
-    "CACHE_TTL_SECONDS": "60"
+    "CACHE_TTL_SECONDS": "60",
+    "REVIEWS_CACHE_TTL_SECONDS": "21600"
   }
 }

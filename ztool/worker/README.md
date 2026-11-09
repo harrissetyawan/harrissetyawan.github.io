@@ -2,7 +2,7 @@
 
 Cloudflare Worker replacement for the old Vercel `/api/search.js` handler used by
 `ztool/index.html`. It proxies Zazzle's product search, enriches each product with
-sales, views, carts, likes, personalization counts and estimated revenue, then
+sales, views, carts, likes, personalization counts and estimated gross revenue, then
 returns a backward-compatible payload with market analysis:
 
 ```json
@@ -48,21 +48,79 @@ GET /api/search?term=boho%20wedding&sortBy=orderitemcount_month&department=0&pag
 
 - `products[]` keeps every original Zazzle field and adds:
   - `stats`: `sales`, `views`, `carts`, `likes`, `personalizations`,
-    `customizations`, `conversionRate`, `estimatedRevenue` (`sales × price`).
+    `customizations`, `conversionRate`, `estimatedRevenue`
+    (gross revenue estimate: `sales × price`, before discounts, shipping, tax
+    and platform fees).
   - `flags`: `bestSeller` (+ `bestSellerTier`/`bestSellerScope`), `editorsPick`,
     `popular`, `easyToPersonalize`, `officiallyLicensed`, `personalized`.
+  - Platform-wide `promoLabel` is intentionally not forwarded.
 - `analysis.keywords` counts single words; `analysis.keywordTags` counts the full
   phrase tags Zazzle stores (tags are space separated, words inside a tag use `+`).
 - `analysis.stores[]` and `analysis.productTypes[]` include estimated monthly
-  revenue, average price, conversion rate and sales share.
+  gross revenue, average price, conversion rate and sales share.
 - `analysis.price` contains min/median/average/max plus price buckets.
 - `analysis.badges` summarises badge prevalence; `analysis.filters` exposes the
   useful Zazzle facets; `analysis.categories` is the department facet.
 - `market` adds `accessibleResults` (`lastPageNum × pageSize`), `analyzedProducts`,
   `totalSales`, `averageSales`, `medianPrice`, `top10SalesShare`,
-  `personalizedShare`, `promoShare` and `bestSellerShare`.
+  `personalizedShare` and `bestSellerShare`.
 - `suggestions` comes from Zazzle's guided search ("Related Niches" in the UI).
 - `source` returns the source/canonical Zazzle URLs, department and search term.
+
+## Reviews endpoint
+
+```
+GET /api/reviews?productId=256139245543951273&productType=zazzle_invitation3&pages=1
+```
+
+| Param         | Default  | Notes                                                        |
+| ------------- | -------- | ------------------------------------------------------------ |
+| `productId`   | required | Numeric Zazzle product id; used as `rootProductId`.          |
+| `productType` | optional | Zazzle product type token, e.g. `zazzle_invitation3`.        |
+| `pages`       | `1`      | Clamped to `1..3`. Each upstream page has at most 100 reviews. |
+
+The endpoint proxies `https://www.zazzle.com/svc/z3/reviews/get2` with
+`sortBy=MostRelevant` (the only sort value that currently works) and returns:
+
+```json
+{
+  "summary": {
+    "totalReviews": 174,
+    "averageRating": 4.47,
+    "percentRecommended": 88.5,
+    "ratingBreakdown": [0, 16, 3, 7, 5, 143],
+    "optionAverageRating": 4.2,
+    "processAverageRating": 4.1,
+    "sampleSize": 38
+  },
+  "product": {
+    "productId": "256139245543951273",
+    "ownReviewCount": 38,
+    "averageRating": 4.5,
+    "percentRecommended": 94.7,
+    "ratingBreakdown": [0, 1, 2, 1, 2, 32],
+    "latestReviewDate": "2026-10-07T14:37:13.493",
+    "reviewsLast90Days": 1,
+    "mediaCount": 3,
+    "sampled": true
+  },
+  "reviews": [],
+  "media": [],
+  "meta": { "productId": "...", "productType": "...", "pages": 1, "sampled": 38, "upstreamTotal": 174 }
+}
+```
+
+Important details:
+
+- `summary` and its `ratingBreakdown` are **category/feed level**, not product
+  level. `ratingBreakdown` is a 6-value array indexed `0..5` stars.
+- `product` is computed by filtering the sampled feed to `review.productId ===
+  productId`. A feed is seeded by the root product but also contains related
+  products' reviews, so `ownReviewCount` is a sample, not a census.
+- `reviews[]` is a small preview (newest first, own-product reviews prioritized).
+  `media[]` collects customer photo/video thumbnails from that preview.
+- Successful responses are edge-cached for 6 hours
+  (`REVIEWS_CACHE_TTL_SECONDS=21600`), independent of the search cache.
 
 Errors are JSON with an appropriate status:
 
@@ -89,7 +147,8 @@ inner string first and then lets `URLSearchParams` encode it again, producing
 | ---------------------- | ------- | ------------------------------------------------ |
 | `ALLOWED_ORIGIN`       | `*`     | Value for `Access-Control-Allow-Origin`.         |
 | `UPSTREAM_TIMEOUT_MS`  | `15000` | Timeout per Zazzle request attempt.               |
-| `CACHE_TTL_SECONDS`    | `60`    | Edge cache TTL. Use `0` to disable.               |
+| `CACHE_TTL_SECONDS`    | `60`    | Search edge cache TTL. Use `0` to disable.        |
+| `REVIEWS_CACHE_TTL_SECONDS` | `21600` | Reviews edge cache TTL (6 hours).            |
 | `UPSTREAM_MAX_ATTEMPTS`| `3`     | Includes the first try; retries 403/429/5xx once. |
 
 For production you can restrict CORS after the frontend URL is known:

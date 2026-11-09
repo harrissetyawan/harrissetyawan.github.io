@@ -7,6 +7,7 @@
 // answers 403 otherwise). `URLSearchParams` performs the second encoding.
 
 const ZAZZLE_ENDPOINT = 'https://www.zazzle.com/svc/z3/search/GetSearchWithProperties';
+const ZAZZLE_REVIEWS_ENDPOINT = 'https://www.zazzle.com/svc/z3/reviews/get2';
 
 const DEFAULT_SORT = 'orderitemcount_month';
 const DEFAULT_DEPARTMENT = '0';
@@ -18,6 +19,13 @@ const DEFAULT_PAGE = 1;
 const MAX_PAGE = 50;
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_CACHE_TTL_SECONDS = 60;
+// Reviews change slowly, so cache them much longer than search results.
+const DEFAULT_REVIEWS_CACHE_TTL_SECONDS = 21600;
+const REVIEWS_PAGE_SIZE = 100;
+const MAX_REVIEWS_PAGES = 3;
+const REVIEWS_PREVIEW_LIMIT = 12;
+const REVIEWS_MEDIA_LIMIT = 8;
+const MAX_MEDIA_PER_REVIEW = 4;
 
 const RETRYABLE_STATUSES = new Set([403, 408, 425, 429, 500, 502, 503, 504]);
 const RETRY_DELAYS_MS = [600, 1500];
@@ -63,8 +71,16 @@ export default {
       );
     }
 
+    if (isReviewsPath(url.pathname)) {
+      return handleReviewsRequest(url, env, corsHeaders);
+    }
+
     if (!isSearchPath(url.pathname)) {
-      return jsonResponse({ error: 'Not found. Use GET /api/search?term=...' }, 404, corsHeaders);
+      return jsonResponse(
+        { error: 'Not found. Use GET /api/search?term=... or GET /api/reviews?productId=...' },
+        404,
+        corsHeaders
+      );
     }
 
     const params = url.searchParams;
@@ -187,6 +203,386 @@ export default {
     return response;
   },
 };
+
+// --- Reviews endpoint -------------------------------------------------------
+
+async function handleReviewsRequest(url, env, corsHeaders) {
+  const params = url.searchParams;
+  const productId = sanitizeProductId(params.get('productId'));
+
+  if (!productId) {
+    return jsonResponse(
+      { error: 'productId is required and must be a numeric Zazzle product id' },
+      400,
+      corsHeaders
+    );
+  }
+
+  const productType = sanitizeToken(params.get('productType'), '');
+  const pages = clampReviewsPages(params.get('pages'));
+  const cacheTtl = parseCacheTtl(
+    env.REVIEWS_CACHE_TTL_SECONDS,
+    DEFAULT_REVIEWS_CACHE_TTL_SECONDS
+  );
+  const cacheKey = buildReviewsCacheKey(url, { productId, productType, pages });
+
+  if (cacheTtl > 0 && typeof caches !== 'undefined' && caches.default) {
+    try {
+      const cached = await caches.default.match(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    } catch (error) {
+      // Cache failures should never break the request.
+    }
+  }
+
+  const timeoutMs = toPositiveInt(env.UPSTREAM_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
+  const maxAttempts = toPositiveInt(env.UPSTREAM_MAX_ATTEMPTS, RETRY_DELAYS_MS.length + 1);
+  const collected = [];
+  let meta = null;
+  let lastStatus = 200;
+
+  for (let pageNum = 1; pageNum <= pages; pageNum += 1) {
+    const upstreamUrl = buildZazzleReviewsUrl({ productId, productType, pageNum });
+    let upstream;
+
+    try {
+      upstream = await fetchWithRetry(upstreamUrl, { timeoutMs, maxAttempts });
+    } catch (error) {
+      return jsonResponse(
+        {
+          error: `Could not reach Zazzle reviews: ${
+            error && error.message ? error.message : 'network error'
+          }`,
+          code: 'upstream_network_error',
+        },
+        502,
+        corsHeaders
+      );
+    }
+
+    lastStatus = upstream.status;
+    const rawText = await upstream.text();
+
+    if (!upstream.ok) {
+      const blocked = upstream.status === 403 || upstream.status === 429;
+      return jsonResponse(
+        {
+          error: blocked
+            ? `Zazzle blocked the reviews request (HTTP ${upstream.status}). Wait a minute and try again.`
+            : `Zazzle reviews API returned status: ${upstream.status}`,
+          code: blocked ? 'upstream_blocked' : 'upstream_error',
+          upstreamStatus: upstream.status,
+        },
+        502,
+        corsHeaders,
+        { 'X-Upstream-Status': String(upstream.status) }
+      );
+    }
+
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (error) {
+      return jsonResponse(
+        {
+          error: 'Zazzle returned a reviews response that is not valid JSON',
+          code: 'invalid_upstream_json',
+          upstreamStatus: upstream.status,
+        },
+        502,
+        corsHeaders,
+        { 'X-Upstream-Status': String(upstream.status) }
+      );
+    }
+
+    // Zazzle wraps the payload as { success, data: { reviews, entities } }.
+    const root = data && typeof data === 'object' ? data : {};
+    const reviewData =
+      root.data && typeof root.data === 'object' ? root.data : root;
+    const reviewBlock = reviewData && typeof reviewData === 'object' ? reviewData.reviews : null;
+    const reviewEntities =
+      reviewData &&
+      reviewData.entities &&
+      reviewData.entities.reviews &&
+      typeof reviewData.entities.reviews === 'object'
+        ? Object.values(reviewData.entities.reviews)
+        : [];
+
+    if (!reviewBlock && !reviewEntities.length) {
+      return jsonResponse(
+        {
+          error: 'Invalid data structure from Zazzle reviews API',
+          code: 'invalid_upstream_structure',
+          upstreamStatus: upstream.status,
+        },
+        502,
+        corsHeaders,
+        { 'X-Upstream-Status': String(upstream.status) }
+      );
+    }
+
+    if (!meta && reviewBlock) {
+      meta = reviewBlock;
+    }
+    collected.push(...reviewEntities);
+
+    // Zazzle returns at most 100 entities per page. A short page means we
+    // reached the end of the accessible sample.
+    if (reviewEntities.length < REVIEWS_PAGE_SIZE) {
+      break;
+    }
+  }
+
+  const payload = buildReviewsPayload({ meta, reviews: collected, productId, productType, pages });
+  const response = jsonResponse(payload, 200, corsHeaders, {
+    'X-Upstream-Status': String(lastStatus),
+  });
+
+  if (cacheTtl > 0) {
+    const cacheable = new Response(response.body, response);
+    cacheable.headers.set('Cache-Control', `public, max-age=${cacheTtl}`);
+    if (typeof caches !== 'undefined' && caches.default) {
+      try {
+        await caches.default.put(cacheKey, cacheable.clone());
+      } catch (error) {
+        // Cache failures should never break the request.
+      }
+    }
+    return cacheable;
+  }
+
+  return response;
+}
+
+export function buildZazzleReviewsUrl({ productId, productType, pageNum = 1 }) {
+  const url = new URL(ZAZZLE_REVIEWS_ENDPOINT);
+  url.searchParams.set('cv', '1');
+  url.searchParams.set('pageNum', String(pageNum));
+  url.searchParams.set('pageSize', String(REVIEWS_PAGE_SIZE));
+  if (productType) {
+    url.searchParams.set('productType', productType);
+  }
+  url.searchParams.set('rootProductId', productId);
+  // This is the only sort value Zazzle currently honours for this endpoint.
+  url.searchParams.set('sortBy', 'MostRelevant');
+  url.searchParams.set('client', 'js');
+  return url.toString();
+}
+
+export function buildReviewsPayload({ meta, reviews, productId, productType, pages = 1 }) {
+  const safeMeta = meta && typeof meta === 'object' ? meta : {};
+  const stats = safeMeta.stats && typeof safeMeta.stats === 'object' ? safeMeta.stats : {};
+  const normalized = (Array.isArray(reviews) ? reviews : [])
+    .map(normalizeReview)
+    .filter(Boolean);
+  const targetId = productId != null ? String(productId) : '';
+  const ownReviews = normalized.filter((review) => review.productId === targetId);
+
+  const summary = {
+    totalReviews: toNumber(
+      safeMeta.totalResults != null ? safeMeta.totalResults : safeMeta.totalReviews
+    ),
+    averageRating: round2(toNumber(stats.averageRating)),
+    percentRecommended: round2(toNumber(stats.percentRecommended) * 100),
+    ratingBreakdown: normalizeRatingBreakdown(stats.ratingBreakdown),
+    optionAverageRating: round2(toNumber(stats.optionAverageRating)),
+    processAverageRating: round2(toNumber(stats.processAverageRating)),
+    sampleSize: normalized.length,
+  };
+
+  const product = summarizeProductReviews(ownReviews, targetId);
+  const preview = pickPreviewReviews(normalized, ownReviews, REVIEWS_PREVIEW_LIMIT);
+
+  return {
+    summary,
+    product,
+    reviews: preview,
+    media: collectReviewMedia(preview, REVIEWS_MEDIA_LIMIT),
+    meta: {
+      productId: targetId,
+      productType: productType || null,
+      pages,
+      sampled: normalized.length,
+      upstreamTotal: summary.totalReviews,
+    },
+  };
+}
+
+function summarizeProductReviews(ownReviews, productId) {
+  const ratingBreakdown = [0, 0, 0, 0, 0, 0];
+  let ratingTotal = 0;
+  let recommended = 0;
+  let mediaCount = 0;
+  let latestReviewDate = null;
+  let reviewsLast90Days = 0;
+  const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+
+  for (const review of ownReviews) {
+    const rating = Math.max(0, Math.min(5, Math.round(toNumber(review.rating))));
+    ratingBreakdown[rating] += 1;
+    ratingTotal += toNumber(review.rating);
+    if (review.recommend) {
+      recommended += 1;
+    }
+    mediaCount += review.media.length;
+    if (review.date) {
+      if (!latestReviewDate || review.date > latestReviewDate) {
+        latestReviewDate = review.date;
+      }
+      const timestamp = Date.parse(review.date);
+      if (Number.isFinite(timestamp) && timestamp >= cutoff) {
+        reviewsLast90Days += 1;
+      }
+    }
+  }
+
+  const count = ownReviews.length;
+  return {
+    productId,
+    ownReviewCount: count,
+    averageRating: count > 0 ? round2(ratingTotal / count) : 0,
+    percentRecommended: count > 0 ? round2((recommended / count) * 100) : 0,
+    ratingBreakdown,
+    latestReviewDate,
+    reviewsLast90Days,
+    mediaCount,
+    sampled: count > 0,
+  };
+}
+
+function normalizeReview(rawReview) {
+  if (!rawReview || typeof rawReview !== 'object') {
+    return null;
+  }
+
+  const product =
+    rawReview.product && typeof rawReview.product === 'object' ? rawReview.product : {};
+  const reviewer =
+    rawReview.reviewer && typeof rawReview.reviewer === 'object' ? rawReview.reviewer : {};
+  const mediaItems = Array.isArray(rawReview.mediaItems) ? rawReview.mediaItems : [];
+  const combinedReview =
+    typeof rawReview.combinedReview === 'string' ? rawReview.combinedReview.trim() : '';
+  const optionReview =
+    typeof rawReview.optionReview === 'string' ? rawReview.optionReview.trim() : '';
+
+  return {
+    id: rawReview.id != null ? String(rawReview.id) : '',
+    productId: rawReview.productId != null ? String(rawReview.productId) : '',
+    rating: toNumber(rawReview.rating),
+    recommend: Boolean(rawReview.recommend),
+    title: truncateText(rawReview.title, 200),
+    text: truncateText(combinedReview || optionReview, 600),
+    date: truncateText(rawReview.dateCreated, 40),
+    reviewerName: truncateText(reviewer.name, 80),
+    reviewerType: truncateText(reviewer.type, 40),
+    isCreatorReview: Boolean(rawReview.isReviewByCreator),
+    isReviewProgram: Boolean(rawReview.isZazzleReviewProgram),
+    productTitle: truncateText(product.title, 200),
+    productLinkUrl: typeof product.linkUrl === 'string' ? product.linkUrl.trim() : '',
+    productImageUrl: typeof product.imageUrl === 'string' ? product.imageUrl.trim() : '',
+    media: mediaItems
+      .slice(0, MAX_MEDIA_PER_REVIEW)
+      .map(normalizeReviewMedia)
+      .filter(Boolean),
+  };
+}
+
+function normalizeReviewMedia(rawMedia) {
+  if (!rawMedia || typeof rawMedia !== 'object') {
+    return null;
+  }
+  const thumbnailUrl =
+    typeof rawMedia.thumbnailUrl === 'string' ? rawMedia.thumbnailUrl.trim() : '';
+  const fullUrl = typeof rawMedia.url === 'string' ? rawMedia.url.trim() : '';
+  if (!thumbnailUrl && !fullUrl) {
+    return null;
+  }
+  return {
+    thumbnailUrl,
+    url: fullUrl || thumbnailUrl,
+    isVideo: Boolean(rawMedia.isVideo),
+  };
+}
+
+function pickPreviewReviews(reviews, ownReviews, limit) {
+  const byDateDesc = (left, right) =>
+    (Date.parse(right.date) || 0) - (Date.parse(left.date) || 0);
+  const ownIds = new Set(ownReviews.map((review) => review.id));
+  const ownSorted = [...ownReviews].sort(byDateDesc);
+  const relatedSorted = reviews
+    .filter((review) => !ownIds.has(review.id))
+    .sort(byDateDesc);
+  return [...ownSorted, ...relatedSorted]
+    .slice(0, limit)
+    .map((review) => ({ ...review }));
+}
+
+function collectReviewMedia(reviews, limit) {
+  const seen = new Set();
+  const media = [];
+
+  for (const review of reviews) {
+    for (const item of review.media) {
+      const key = item.url || item.thumbnailUrl;
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      media.push({
+        ...item,
+        productTitle: review.productTitle,
+        reviewId: review.id,
+      });
+      if (media.length >= limit) {
+        return media;
+      }
+    }
+  }
+
+  return media;
+}
+
+function normalizeRatingBreakdown(rawBreakdown) {
+  const values = Array.isArray(rawBreakdown) ? rawBreakdown : [];
+  return [0, 1, 2, 3, 4, 5].map((index) => Math.max(0, toNumber(values[index])));
+}
+
+function truncateText(value, maxLength) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim();
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength - 1)}…` : trimmed;
+}
+
+function sanitizeProductId(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim();
+  return /^\d{6,20}$/.test(trimmed) ? trimmed : '';
+}
+
+function clampReviewsPages(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 1;
+  }
+  return Math.min(MAX_REVIEWS_PAGES, parsed);
+}
+
+function buildReviewsCacheKey(url, { productId, productType, pages }) {
+  const key = new URL(url.origin);
+  key.pathname = '/__cache/zazzle-reviews';
+  key.searchParams.set('productId', productId);
+  if (productType) {
+    key.searchParams.set('productType', productType);
+  }
+  key.searchParams.set('pages', String(pages));
+  return key.toString();
+}
 
 // --- Zazzle request building ------------------------------------------------
 
@@ -332,9 +728,11 @@ function enrichProduct(product) {
   const conversionRate = views > 0 ? (sales / views) * 100 : 0;
   const bestSeller = findBadge(safeProduct, 'BestSeller');
   const has = (type) => Boolean(findBadge(safeProduct, type));
+  // Platform-wide promo labels are not useful for niche analysis; drop them.
+  const { promoLabel: _promoLabel, ...productFields } = safeProduct;
 
   return {
-    ...safeProduct,
+    ...productFields,
     stats: {
       sales,
       views,
@@ -567,9 +965,6 @@ function buildMarket(searchResults, products, options = {}) {
   const top10Sales = sales.slice(0, 10).reduce((sum, value) => sum + value, 0);
   const prices = analyzePrices(products);
   const personalized = products.filter((product) => product.flags.personalized).length;
-  const withPromo = products.filter(
-    (product) => typeof product.promoLabel === 'string' && product.promoLabel.trim()
-  ).length;
   const bestSellers = products.filter((product) => product.flags.bestSeller).length;
 
   return {
@@ -585,7 +980,6 @@ function buildMarket(searchResults, products, options = {}) {
     medianPrice: prices.median,
     top10SalesShare: percent(top10Sales, totalSales),
     personalizedShare: percent(personalized, totalAnalyzed),
-    promoShare: percent(withPromo, totalAnalyzed),
     bestSellerShare: percent(bestSellers, totalAnalyzed),
   };
 }
@@ -697,6 +1091,10 @@ function isSearchPath(pathname) {
   return /\/api\/search\/?$/.test(pathname) || pathname === '/' || pathname === '';
 }
 
+function isReviewsPath(pathname) {
+  return /\/api\/reviews\/?$/.test(pathname);
+}
+
 function buildCacheKey(url, { term, sortBy, department, pageSize, page }) {
   const key = new URL(url.origin);
   key.pathname = '/__cache/zazzle-search';
@@ -776,15 +1174,15 @@ function toPositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function parseCacheTtl(value) {
+function parseCacheTtl(value, fallback = DEFAULT_CACHE_TTL_SECONDS) {
   if (value === undefined || value === null || value === '') {
-    return DEFAULT_CACHE_TTL_SECONDS;
+    return fallback;
   }
   const parsed = Number.parseInt(value, 10);
   if (parsed === 0) {
     return 0;
   }
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CACHE_TTL_SECONDS;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function toNumber(value) {

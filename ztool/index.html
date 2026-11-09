@@ -63,6 +63,10 @@
         const ZAZZLE_BACKEND_STORAGE_KEY = 'zazzleToolBackendUrl';
         const ZAZZLE_DEFAULT_BACKEND_URL = 'https://zazzle-search-api.harrisfm90.workers.dev';
         const ZAZZLE_REQUEST_TIMEOUT_MS = 30000;
+        // Only the top few products are enriched with review data so search
+        // stays fast; each product costs one upstream reviews request.
+        const ZAZZLE_REVIEWS_TOP_PRODUCTS = 3;
+        const ZAZZLE_REVIEWS_PAGES = 1;
         const ZAZZLE_PLACEHOLDER_IMAGE =
             'data:image/svg+xml;charset=UTF-8,' +
             encodeURIComponent(
@@ -187,7 +191,6 @@
                 linkUrl: toSafeHttpUrl(product.linkUrl),
                 price,
                 productType: toTrimmedString(product.productType) || 'unknown',
-                promoLabel: toTrimmedString(product.promoLabel),
                 stats,
                 flags: normalizeFlags(product.flags, stats),
             };
@@ -326,7 +329,6 @@
                 medianPrice: Math.max(0, toFiniteNumber(market.medianPrice)),
                 top10SalesShare: Math.max(0, toFiniteNumber(market.top10SalesShare)),
                 personalizedShare: Math.max(0, toFiniteNumber(market.personalizedShare)),
-                promoShare: Math.max(0, toFiniteNumber(market.promoShare)),
                 bestSellerShare: Math.max(0, toFiniteNumber(market.bestSellerShare)),
             };
         }
@@ -344,6 +346,80 @@
                     }))
                     .filter((suggestion) => suggestion.name && suggestion.searchTerm)
                 : [];
+        }
+
+        function normalizeRatingBreakdown(rawBreakdown) {
+            const values = Array.isArray(rawBreakdown) ? rawBreakdown : [];
+            return [0, 1, 2, 3, 4, 5].map((index) => Math.max(0, toFiniteNumber(values[index])));
+        }
+
+        function emptyReviewSummary() {
+            return {
+                totalReviews: 0,
+                averageRating: 0,
+                percentRecommended: 0,
+                ratingBreakdown: [0, 0, 0, 0, 0, 0],
+                optionAverageRating: 0,
+                processAverageRating: 0,
+                sampleSize: 0,
+            };
+        }
+
+        function normalizeReviewSummary(rawSummary) {
+            const summary = rawSummary && typeof rawSummary === 'object' ? rawSummary : {};
+            return {
+                totalReviews: Math.max(0, toFiniteNumber(summary.totalReviews)),
+                averageRating: Math.max(0, Math.min(5, toFiniteNumber(summary.averageRating))),
+                percentRecommended: Math.max(0, Math.min(100, toFiniteNumber(summary.percentRecommended))),
+                ratingBreakdown: normalizeRatingBreakdown(summary.ratingBreakdown),
+                optionAverageRating: Math.max(0, Math.min(5, toFiniteNumber(summary.optionAverageRating))),
+                processAverageRating: Math.max(0, Math.min(5, toFiniteNumber(summary.processAverageRating))),
+                sampleSize: Math.max(0, toFiniteNumber(summary.sampleSize)),
+            };
+        }
+
+        function emptyProductReview(productId = '') {
+            return {
+                productId: productId == null ? '' : String(productId),
+                ownReviewCount: 0,
+                averageRating: 0,
+                percentRecommended: 0,
+                ratingBreakdown: [0, 0, 0, 0, 0, 0],
+                latestReviewDate: null,
+                reviewsLast90Days: 0,
+                mediaCount: 0,
+                sampled: false,
+            };
+        }
+
+        function normalizeProductReview(rawProduct, productId) {
+            const product = rawProduct && typeof rawProduct === 'object' ? rawProduct : {};
+            const count = Math.max(0, toFiniteNumber(product.ownReviewCount));
+            return {
+                productId: toTrimmedString(product.productId) || String(productId || ''),
+                ownReviewCount: count,
+                averageRating: Math.max(0, Math.min(5, toFiniteNumber(product.averageRating))),
+                percentRecommended: Math.max(0, Math.min(100, toFiniteNumber(product.percentRecommended))),
+                ratingBreakdown: normalizeRatingBreakdown(product.ratingBreakdown),
+                latestReviewDate: toTrimmedString(product.latestReviewDate) || null,
+                reviewsLast90Days: Math.max(0, toFiniteNumber(product.reviewsLast90Days)),
+                mediaCount: Math.max(0, toFiniteNumber(product.mediaCount)),
+                sampled: Boolean(product.sampled) || count > 0,
+            };
+        }
+
+        function normalizeReviewData(rawData, productId) {
+            const data = rawData && typeof rawData === 'object' ? rawData : {};
+            return {
+                summary: normalizeReviewSummary(data.summary),
+                product: normalizeProductReview(data.product, productId),
+                reviews: Array.isArray(data.reviews)
+                    ? data.reviews.filter((review) => review && typeof review === 'object')
+                    : [],
+                media: Array.isArray(data.media)
+                    ? data.media.filter((item) => item && typeof item === 'object')
+                    : [],
+            };
         }
 
         function emptyAnalysis() {
@@ -374,6 +450,9 @@
                 analysis: emptyAnalysis(),
                 market: emptyMarket(),
                 suggestions: [],
+                reviewData: {},
+                reviewLoading: false,
+                reviewError: null,
                 source: null,
                 keywordMode: 'tags',
                 keywordsCopied: false,
@@ -396,6 +475,51 @@
                     return this.keywordMode === 'tags'
                         ? this.analysis.keywordTags
                         : this.analysis.keywords;
+                },
+
+                get reviewTargets() {
+                    const seen = new Set();
+                    const targets = [];
+                    const add = (product) => {
+                        if (!product || !product.id || seen.has(product.id)) {
+                            return;
+                        }
+                        if (!/^\d{6,20}$/.test(product.id)) {
+                            return;
+                        }
+                        seen.add(product.id);
+                        targets.push(product);
+                    };
+                    add(this.topProduct);
+                    [...this.products]
+                        .sort((a, b) => (b.stats ? b.stats.sales : 0) - (a.stats ? a.stats.sales : 0))
+                        .forEach(add);
+                    return targets.slice(0, ZAZZLE_REVIEWS_TOP_PRODUCTS);
+                },
+
+                get reviewSeed() {
+                    for (const target of this.reviewTargets) {
+                        if (this.reviewData[target.id]) {
+                            return this.reviewData[target.id];
+                        }
+                    }
+                    const loadedIds = Object.keys(this.reviewData);
+                    return loadedIds.length ? this.reviewData[loadedIds[0]] : null;
+                },
+
+                get reviewHealth() {
+                    return this.reviewSeed ? this.reviewSeed.summary : emptyReviewSummary();
+                },
+
+                get reviewHealthProduct() {
+                    return this.reviewSeed
+                        ? this.reviewSeed.product
+                        : emptyProductReview();
+                },
+
+                get reviewSeedTitle() {
+                    const seed = this.reviewTargets[0];
+                    return seed ? seed.titleSeo : 'the top product';
                 },
 
                 get suggestionGroups() {
@@ -513,6 +637,97 @@
                     }
                 },
 
+                buildReviewsUrl(product) {
+                    const backendUrl = this.backendUrl.trim();
+                    if (!backendUrl || !product || !product.id) {
+                        return null;
+                    }
+
+                    try {
+                        const url = new URL(backendUrl);
+                        if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+                            return null;
+                        }
+                        const basePath = url.pathname.replace(/\/+$/, '');
+                        url.pathname = /\/api\/search$/.test(basePath)
+                            ? basePath.replace(/\/api\/search$/, '/api/reviews')
+                            : `${basePath}/api/reviews`;
+                        const query = [
+                            `productId=${encodeURIComponent(product.id)}`,
+                            `pages=${encodeURIComponent(ZAZZLE_REVIEWS_PAGES)}`,
+                        ];
+                        if (product.productType) {
+                            query.push(`productType=${encodeURIComponent(product.productType)}`);
+                        }
+                        url.search = query.join('&');
+                        url.hash = '';
+                        return url.toString();
+                    } catch (error) {
+                        return null;
+                    }
+                },
+
+                async loadReviews() {
+                    const targets = this.reviewTargets;
+                    const requestId = this.requestId;
+                    this.reviewData = {};
+                    this.reviewError = null;
+                    this.reviewLoading = targets.length > 0;
+                    if (!targets.length) {
+                        return;
+                    }
+
+                    const results = await Promise.allSettled(
+                        targets.map(async (product) => {
+                            const url = this.buildReviewsUrl(product);
+                            if (!url) {
+                                throw new Error('Backend URL must be a valid http:// or https:// address');
+                            }
+                            const response = await fetch(url, {
+                                headers: { Accept: 'application/json' },
+                            });
+                            const rawText = await response.text();
+                            if (!response.ok) {
+                                throw new Error(this.extractErrorMessage(rawText, response.status));
+                            }
+                            let data;
+                            try {
+                                data = JSON.parse(rawText);
+                            } catch (error) {
+                                throw new Error('The backend returned review data that is not valid JSON');
+                            }
+                            return {
+                                id: product.id,
+                                data: normalizeReviewData(data, product.id),
+                            };
+                        })
+                    );
+
+                    if (requestId !== this.requestId) {
+                        return;
+                    }
+
+                    const next = {};
+                    let firstError = null;
+                    for (const result of results) {
+                        if (result.status === 'fulfilled') {
+                            next[result.value.id] = result.value.data;
+                        } else if (!firstError) {
+                            firstError = result.reason;
+                        }
+                    }
+
+                    this.reviewData = next;
+                    this.reviewError = firstError
+                        ? `Review signals are partially unavailable: ${
+                            firstError && firstError.message
+                                ? firstError.message.replace(/[.\s]+$/, '')
+                                : 'unknown error'
+                        }`
+                        : null;
+                    this.reviewLoading = false;
+                },
+
                 get diagnosticsText() {
                     if (!this.diagnostics) {
                         return '';
@@ -616,6 +831,9 @@
                     this.analysis = emptyAnalysis();
                     this.market = emptyMarket();
                     this.suggestions = [];
+                    this.reviewData = {};
+                    this.reviewLoading = false;
+                    this.reviewError = null;
                     this.source = null;
                     this.view = 'products';
                     this.sortBy = 'sales';
@@ -699,6 +917,9 @@
 
                         if (!products.length) {
                             this.error = 'No products found. The backend returned an empty products list. Open "Show debug details" below to inspect the response.';
+                        } else {
+                            // Reviews are additive: never block the main search result.
+                            this.loadReviews();
                         }
                     } catch (error) {
                         if (requestId !== this.requestId) {
@@ -750,6 +971,77 @@
 
                 formatPercent(value) {
                     return `${toFiniteNumber(value).toFixed(2)}%`;
+                },
+
+                formatRating(value) {
+                    const number = toFiniteNumber(value);
+                    return number > 0 ? number.toFixed(1) : '—';
+                },
+
+                formatReviewDate(value) {
+                    const text = toTrimmedString(value);
+                    return text ? text.slice(0, 10) : 'date unknown';
+                },
+
+                ratingRows(rawBreakdown) {
+                    const breakdown = normalizeRatingBreakdown(rawBreakdown);
+                    const total = breakdown.reduce((sum, count) => sum + count, 0);
+                    return [5, 4, 3, 2, 1].map((stars) => {
+                        const count = breakdown[stars];
+                        return {
+                            stars,
+                            count,
+                            share: total > 0 ? (count / total) * 100 : 0,
+                        };
+                    });
+                },
+
+                reviewForProduct(productId) {
+                    const id = productId == null ? '' : String(productId);
+                    const data = this.reviewData[id];
+                    return data && data.product ? data.product : emptyProductReview(id);
+                },
+
+                hasReviewData(productId) {
+                    const id = productId == null ? '' : String(productId);
+                    return Boolean(this.reviewData[id]);
+                },
+
+                reviewBadges(productId) {
+                    const review = this.reviewForProduct(productId);
+                    if (!review.sampled) {
+                        return [];
+                    }
+
+                    const badges = [];
+                    if (
+                        review.ownReviewCount >= 10 &&
+                        review.averageRating >= 4.5 &&
+                        review.percentRecommended >= 90
+                    ) {
+                        badges.push({
+                            label: 'Loved',
+                            classes: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+                        });
+                    } else if (review.averageRating > 0 && review.averageRating < 4) {
+                        badges.push({
+                            label: 'Mixed',
+                            classes: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+                        });
+                    }
+                    if (review.reviewsLast90Days > 0) {
+                        badges.push({
+                            label: 'Recent',
+                            classes: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+                        });
+                    }
+                    if (review.ownReviewCount < 5) {
+                        badges.push({
+                            label: 'Low sample',
+                            classes: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+                        });
+                    }
+                    return badges;
                 },
 
                 formatShare(value) {
@@ -949,7 +1241,7 @@
                 <div class="text-2xl font-bold text-green-400"
                     x-text="topProduct ? formatNumber(topProduct.stats.sales) : 'N/A'"></div>
                 <div class="text-xs text-gray-400"
-                    x-text="topProduct ? 'Est. ' + formatCurrency(topProduct.stats.estimatedRevenue) + ' revenue/mo' : 'Est. Sales/Mo for #1'"></div>
+                    x-text="topProduct ? 'Est. ' + formatCurrency(topProduct.stats.estimatedRevenue) + ' gross revenue/mo' : 'Est. Sales/Mo for #1'"></div>
             </div>
             <div class="bg-gray-800 p-4 rounded-xl">
                 <div class="text-sm font-medium text-gray-400">Dominant Product Type</div>
@@ -974,9 +1266,120 @@
             <div class="bg-gray-800 p-4 rounded-xl">
                 <div class="text-sm font-medium text-gray-400">Top-10 Sales Share</div>
                 <div class="text-2xl font-bold text-fuchsia-400" x-text="formatShare(market.top10SalesShare)"></div>
-                <div class="text-xs text-gray-400" x-text="'Sales concentration · ' + formatShare(market.promoShare) + ' on promo'"></div>
+                <div class="text-xs text-gray-400"
+                    x-text="'Top 10 of ' + formatNumber(market.analyzedProducts) + ' analyzed products'"></div>
             </div>
         </div>
+
+        <section x-show="!loading && products.length > 0" class="bg-gray-800 rounded-2xl shadow-lg p-6 mb-8"
+            aria-label="Review health">
+            <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h2 class="text-xl font-bold text-white">Review Health</h2>
+                    <p class="text-sm text-gray-400">
+                        Category signal from the review feed seeded by
+                        <span class="font-medium text-gray-200" x-text="reviewSeedTitle"></span>.
+                    </p>
+                </div>
+                <span
+                    class="rounded-full border border-gray-600 bg-gray-700/50 px-3 py-1 text-xs font-semibold text-gray-300">
+                    Lazy-loaded reviews &middot; top 3 products
+                </span>
+            </div>
+
+            <p x-show="reviewLoading" class="text-sm text-gray-400">Loading review signals&hellip;</p>
+            <p x-show="!reviewLoading && reviewError" class="text-sm text-amber-300" x-text="reviewError"></p>
+            <p x-show="!reviewLoading && !reviewError && !reviewSeed" class="text-sm text-gray-400">
+                No review data was returned for this niche.
+            </p>
+
+            <div x-show="!reviewLoading && reviewSeed" class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                <div class="rounded-xl bg-gray-700/40 p-4">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wide text-gray-400">Average rating</div>
+                            <div class="text-2xl font-bold text-amber-400" x-text="formatRating(reviewHealth.averageRating)">
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wide text-gray-400">% recommended</div>
+                            <div class="text-2xl font-bold text-emerald-400"
+                                x-text="formatShare(reviewHealth.percentRecommended)"></div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wide text-gray-400">Category review pool</div>
+                            <div class="text-lg font-bold text-white" x-text="formatNumber(reviewHealth.totalReviews)"></div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wide text-gray-400">Sample</div>
+                            <div class="text-lg font-bold text-white" x-text="formatNumber(reviewHealth.sampleSize)"></div>
+                        </div>
+                    </div>
+                    <div class="mt-4 grid grid-cols-2 gap-3 border-t border-gray-700 pt-3">
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wide text-gray-400">Option satisfaction</div>
+                            <div class="text-sm font-bold text-sky-300"
+                                x-text="formatRating(reviewHealth.optionAverageRating) + ' / 5'"></div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wide text-gray-400">Process satisfaction</div>
+                            <div class="text-sm font-bold text-sky-300"
+                                x-text="formatRating(reviewHealth.processAverageRating) + ' / 5'"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="rounded-xl bg-gray-700/40 p-4">
+                    <div class="mb-3 text-sm font-medium text-gray-300">Rating mix
+                        <span class="text-xs font-normal text-gray-500">(category sample)</span>
+                    </div>
+                    <template x-for="row in ratingRows(reviewHealth.ratingBreakdown)" :key="row.stars">
+                        <div class="mb-2 flex items-center gap-2">
+                            <span class="w-8 text-xs text-gray-400" x-text="row.stars + '★'"></span>
+                            <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-900/60">
+                                <div class="h-full rounded-full bg-amber-400"
+                                    :style="'width: ' + row.share.toFixed(1) + '%'"></div>
+                            </div>
+                            <span class="w-10 text-right text-xs text-gray-300" x-text="formatNumber(row.count)"></span>
+                        </div>
+                    </template>
+                </div>
+
+                <div class="rounded-xl bg-gray-700/40 p-4">
+                    <div class="mb-1 text-sm font-medium text-gray-300">Seed product</div>
+                    <p class="mb-3 line-clamp-2 text-xs text-gray-500" x-text="reviewSeedTitle"></p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wide text-gray-400">Rating</div>
+                            <div class="text-lg font-bold text-amber-400"
+                                x-text="formatRating(reviewHealthProduct.averageRating)"></div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wide text-gray-400">Reviews sampled</div>
+                            <div class="text-lg font-bold text-white"
+                                x-text="formatNumber(reviewHealthProduct.ownReviewCount)"></div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wide text-gray-400">Latest review</div>
+                            <div class="text-xs font-semibold text-white"
+                                x-text="formatReviewDate(reviewHealthProduct.latestReviewDate)"></div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wide text-gray-400">Last 90 days</div>
+                            <div class="text-lg font-bold text-white"
+                                x-text="formatNumber(reviewHealthProduct.reviewsLast90Days)"></div>
+                        </div>
+                    </div>
+                    <div class="mt-3 flex flex-wrap gap-1">
+                        <template x-for="(badge, badgeIndex) in reviewBadges(reviewHealthProduct.productId)"
+                            :key="`seed-review-${badgeIndex}`">
+                            <span class="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                                :class="badge.classes" x-text="badge.label"></span>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </section>
 
         <div x-show="!initialLoad && !loading">
             <div x-show="products.length > 0" class="mb-6">
@@ -1030,7 +1433,7 @@
                 <button type="button" @click="setSort('estimatedRevenue')" :aria-pressed="sortBy === 'estimatedRevenue'"
                     :class="sortBy === 'estimatedRevenue' ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'"
                     class="px-3 py-1 text-sm font-semibold rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">Est.
-                    Revenue</button>
+                    Gross Revenue</button>
                 <button type="button" @click="setSort('views')" :aria-pressed="sortBy === 'views'"
                     :class="sortBy === 'views' ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'"
                     class="px-3 py-1 text-sm font-semibold rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">Most
@@ -1068,8 +1471,39 @@
                                             :class="badge.classes" x-text="badge.label"></span>
                                     </template>
                                 </div>
-                                <p x-show="product.promoLabel" class="mb-2 text-xs font-medium text-lime-300"
-                                    x-text="product.promoLabel"></p>
+                                <div x-show="reviewForProduct(product.id).sampled"
+                                    class="mb-2 rounded-lg border border-gray-700 bg-gray-900/40 px-3 py-2">
+                                    <div class="flex items-center justify-between gap-2 text-xs">
+                                        <span class="font-bold text-amber-300">
+                                            <span x-text="formatRating(reviewForProduct(product.id).averageRating)"></span>
+                                            <span aria-hidden="true">★</span>
+                                        </span>
+                                        <span class="text-gray-400"
+                                            x-text="formatNumber(reviewForProduct(product.id).ownReviewCount) + ' reviews sampled'"></span>
+                                    </div>
+                                    <div class="mt-1 text-[11px] text-gray-400">
+                                        <span x-text="formatShare(reviewForProduct(product.id).percentRecommended) + ' recommend'"></span>
+                                        <span class="text-gray-600"> · </span>
+                                        <span x-text="'Latest ' + formatReviewDate(reviewForProduct(product.id).latestReviewDate)"></span>
+                                    </div>
+                                    <div class="mt-1 flex flex-wrap gap-1">
+                                        <template x-for="(badge, reviewBadgeIndex) in reviewBadges(product.id)"
+                                            :key="`${product.id}-review-badge-${reviewBadgeIndex}`">
+                                            <span class="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                                                :class="badge.classes" x-text="badge.label"></span>
+                                        </template>
+                                    </div>
+                                </div>
+                                <div x-show="hasReviewData(product.id) && !reviewForProduct(product.id).sampled"
+                                    class="mb-2 rounded-lg border border-gray-700 bg-gray-900/40 px-3 py-2 text-[11px] text-gray-400">
+                                    No own reviews in the sampled feed &middot; category
+                                    <span class="font-semibold text-amber-300"
+                                        x-text="formatRating(reviewHealth.averageRating) + '★'"></span>
+                                    <span class="text-gray-600">/</span>
+                                    <span class="font-semibold text-emerald-300"
+                                        x-text="formatShare(reviewHealth.percentRecommended)"></span>
+                                    recommend
+                                </div>
                                 <p x-show="product.description" class="mb-3 text-xs text-gray-500 line-clamp-2"
                                     x-text="product.description"></p>
                                 <div class="grid grid-cols-2 gap-2 text-sm mb-4">
@@ -1078,7 +1512,7 @@
                                         <div class="font-bold text-white" x-text="formatNumber(product.stats.sales)"></div>
                                     </div>
                                     <div class="rounded-lg bg-gray-700/40 px-2 py-1.5">
-                                        <div class="text-[10px] uppercase tracking-wide text-gray-400">Est. revenue/mo</div>
+                                        <div class="text-[10px] uppercase tracking-wide text-gray-400">Est. gross revenue/mo</div>
                                         <div class="font-bold text-green-400"
                                             x-text="formatCurrency(product.stats.estimatedRevenue)"></div>
                                     </div>
@@ -1123,7 +1557,7 @@
                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
                     <h2 class="text-2xl font-bold text-white mb-4">Product Type Analysis</h2>
                     <p class="text-gray-400 mb-6">These are the most common product types found in the top search
-                        results, including their estimated monthly sales, revenue, price and sales share.</p>
+                        results, including their estimated monthly sales, gross revenue, price and sales share.</p>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm text-left text-gray-300">
                             <caption class="sr-only">Product type performance from the analyzed search results</caption>
@@ -1132,7 +1566,7 @@
                                     <th scope="col" class="px-4 py-3">Product Type</th>
                                     <th scope="col" class="px-4 py-3 text-right">Count</th>
                                     <th scope="col" class="px-4 py-3 text-right">Sales/Mo</th>
-                                    <th scope="col" class="px-4 py-3 text-right">Est. Revenue/Mo</th>
+                                    <th scope="col" class="px-4 py-3 text-right">Est. Gross Revenue/Mo</th>
                                     <th scope="col" class="px-4 py-3 text-right">Avg. Price</th>
                                     <th scope="col" class="px-4 py-3 text-right">Sales Share</th>
                                 </tr>
@@ -1203,7 +1637,7 @@
                 <div class="bg-gray-800 rounded-2xl shadow-lg p-6">
                     <h2 class="text-2xl font-bold text-white mb-4">Top Stores Analysis</h2>
                     <p class="text-gray-400 mb-6">Discover the dominant stores in this niche based on estimated
-                        monthly revenue, sales, conversion rate and product count from the search results.</p>
+                        monthly gross revenue, sales, conversion rate and product count from the search results.</p>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm text-left text-gray-300">
                             <caption class="sr-only">Store performance from the analyzed search results</caption>
@@ -1211,7 +1645,7 @@
                                 <tr>
                                     <th scope="col" class="px-4 py-3">Rank</th>
                                     <th scope="col" class="px-4 py-3">Store Name</th>
-                                    <th scope="col" class="px-4 py-3 text-right">Est. Revenue/Mo</th>
+                                    <th scope="col" class="px-4 py-3 text-right">Est. Gross Revenue/Mo</th>
                                     <th scope="col" class="px-4 py-3 text-right">Sales/Mo</th>
                                     <th scope="col" class="px-4 py-3 text-right">Products</th>
                                     <th scope="col" class="px-4 py-3 text-right">Avg. Price</th>

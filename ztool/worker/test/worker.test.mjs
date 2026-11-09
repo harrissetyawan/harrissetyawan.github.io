@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import worker, { buildPayload, buildZazzleUrl } from '../src/index.js';
+import worker, {
+  buildPayload,
+  buildReviewsPayload,
+  buildZazzleReviewsUrl,
+  buildZazzleUrl,
+} from '../src/index.js';
 
 const BASE_ENV = {
   CACHE_TTL_SECONDS: '0',
@@ -265,6 +270,7 @@ test('successful search enriches products, analysis, market, suggestions and sou
   assert.equal(body.products[1].flags.popular, true);
   assert.equal(body.products[1].flags.bestSeller, false);
   assert.equal(body.products[2].stats.estimatedRevenue, 0);
+  assert.equal(body.products[0].promoLabel, undefined);
 
   assert.equal(body.topProduct.titleSeo, 'Product A');
   assert.equal(body.market.saturation, 12345);
@@ -276,7 +282,7 @@ test('successful search enriches products, analysis, market, suggestions and sou
   assert.equal(body.market.medianPrice, 10);
   assert.equal(body.market.top10SalesShare, 100);
   assert.equal(body.market.personalizedShare, 66.67);
-  assert.equal(body.market.promoShare, 33.33);
+  assert.equal('promoShare' in body.market, false);
   assert.equal(body.market.bestSellerShare, 33.33);
 
   assert.deepEqual(body.analysis.keywords, [
@@ -537,4 +543,221 @@ test('buildPayload handles malformed products without throwing', () => {
   assert.deepEqual(payload.analysis.keywords, []);
   assert.deepEqual(payload.analysis.keywordTags, [{ term: 'a b', count: 1 }]);
   assert.deepEqual(payload.suggestions, []);
+});
+
+// --- /api/reviews -----------------------------------------------------------
+
+function sampleReviewsResponse() {
+  return {
+    reviews: {
+      totalResults: 174,
+      totalReviews: 174,
+      stats: {
+        averageRating: 4.47,
+        percentRecommended: 0.885,
+        ratingBreakdown: [0, 16, 3, 7, 5, 143],
+        optionAverageRating: 4.2,
+        processAverageRating: 4.1,
+      },
+    },
+    entities: {
+      reviews: {
+        r1: {
+          id: 'r1',
+          productId: '256302943466835132',
+          rating: 5,
+          recommend: true,
+          title: 'Beautiful',
+          combinedReview: 'Loved it',
+          dateCreated: '2026-03-02T11:57:49.433',
+          reviewer: { name: 'Ada', type: 'customer' },
+          isReviewByCreator: false,
+          isZazzleReviewProgram: false,
+          mediaItems: [
+            {
+              thumbnailUrl: 'https://img.example/thumb.jpg',
+              url: 'https://img.example/full.jpg',
+              isVideo: false,
+            },
+          ],
+          product: {
+            title: 'Invite',
+            linkUrl: 'https://www.zazzle.com/x',
+            imageUrl: 'https://img.example/p.jpg',
+          },
+        },
+        r2: {
+          id: 'r2',
+          productId: '256302943466835132',
+          rating: 4,
+          recommend: true,
+          dateCreated: '2026-01-01T00:00:00.000',
+          mediaItems: [],
+        },
+        r3: {
+          id: 'r3',
+          productId: '999',
+          rating: 3,
+          recommend: false,
+          dateCreated: '2025-01-01T00:00:00.000',
+          mediaItems: [],
+        },
+      },
+    },
+  };
+}
+
+test('buildZazzleReviewsUrl includes the required query params', () => {
+  const url = new URL(
+    buildZazzleReviewsUrl({
+      productId: '256302943466835132',
+      productType: 'zazzle_invitation3',
+      pageNum: 2,
+    })
+  );
+
+  assert.equal(url.origin + url.pathname, 'https://www.zazzle.com/svc/z3/reviews/get2');
+  assert.equal(url.searchParams.get('cv'), '1');
+  assert.equal(url.searchParams.get('pageNum'), '2');
+  assert.equal(url.searchParams.get('pageSize'), '100');
+  assert.equal(url.searchParams.get('productType'), 'zazzle_invitation3');
+  assert.equal(url.searchParams.get('rootProductId'), '256302943466835132');
+  assert.equal(url.searchParams.get('sortBy'), 'MostRelevant');
+  assert.equal(url.searchParams.get('client'), 'js');
+});
+
+test('buildReviewsPayload computes category summary and own-product stats', () => {
+  const payload = buildReviewsPayload({
+    ...sampleReviewsResponse(),
+    meta: sampleReviewsResponse().reviews,
+    reviews: Object.values(sampleReviewsResponse().entities.reviews),
+    productId: '256302943466835132',
+    productType: 'zazzle_invitation3',
+    pages: 1,
+  });
+
+  assert.equal(payload.summary.totalReviews, 174);
+  assert.equal(payload.summary.averageRating, 4.47);
+  assert.equal(payload.summary.percentRecommended, 88.5);
+  assert.deepEqual(payload.summary.ratingBreakdown, [0, 16, 3, 7, 5, 143]);
+  assert.equal(payload.summary.sampleSize, 3);
+
+  assert.equal(payload.product.ownReviewCount, 2);
+  assert.equal(payload.product.averageRating, 4.5);
+  assert.equal(payload.product.percentRecommended, 100);
+  assert.equal(payload.product.latestReviewDate, '2026-03-02T11:57:49.433');
+  assert.equal(payload.product.mediaCount, 1);
+  assert.equal(payload.product.sampled, true);
+
+  assert.equal(payload.reviews[0].id, 'r1');
+  assert.equal(payload.reviews.length, 3);
+  assert.equal(payload.media.length, 1);
+  assert.equal(payload.media[0].productTitle, 'Invite');
+});
+
+test('buildReviewsPayload is safe when the sample contains no own reviews', () => {
+  const payload = buildReviewsPayload({
+    meta: sampleReviewsResponse().reviews,
+    reviews: [sampleReviewsResponse().entities.reviews.r3],
+    productId: '256302943466835132',
+    productType: '',
+    pages: 1,
+  });
+
+  assert.equal(payload.product.ownReviewCount, 0);
+  assert.equal(payload.product.sampled, false);
+  assert.equal(payload.product.averageRating, 0);
+  assert.deepEqual(payload.product.ratingBreakdown, [0, 0, 0, 0, 0, 0]);
+});
+
+test('reviews endpoint requires a numeric productId', async () => {
+  const missing = await worker.fetch(makeRequest('', '/api/reviews'), BASE_ENV);
+  assert.equal(missing.status, 400);
+
+  const invalid = await worker.fetch(
+    makeRequest('productId=abc', '/api/reviews'),
+    BASE_ENV
+  );
+  assert.equal(invalid.status, 400);
+});
+
+test('reviews endpoint returns a normalized payload with a 6h cache header', async (t) => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = '';
+  globalThis.fetch = async (url) => {
+    requestedUrl = String(url);
+    return mockUpstream({ success: true, data: sampleReviewsResponse() }, 200);
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const response = await worker.fetch(
+    makeRequest(
+      'productId=256302943466835132&productType=zazzle_invitation3&pages=1',
+      '/api/reviews'
+    ),
+    { UPSTREAM_MAX_ATTEMPTS: '1' }
+  );
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.product.ownReviewCount, 2);
+  assert.equal(body.summary.totalReviews, 174);
+  assert.match(requestedUrl, /rootProductId=256302943466835132/);
+  assert.match(response.headers.get('Cache-Control'), /max-age=21600/);
+});
+
+test('reviews endpoint clamps pages to the maximum of 3', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const requestedPages = [];
+  const fullPage = () => {
+    const entities = {};
+    for (let index = 0; index < 100; index += 1) {
+      entities[`r${index}`] = {
+        id: `r${index}`,
+        productId: '256302943466835132',
+        rating: 5,
+        recommend: true,
+        dateCreated: '2026-01-01T00:00:00.000',
+        mediaItems: [],
+      };
+    }
+    return {
+      success: true,
+      data: { reviews: sampleReviewsResponse().reviews, entities: { reviews: entities } },
+    };
+  };
+  globalThis.fetch = async (url) => {
+    requestedPages.push(new URL(url).searchParams.get('pageNum'));
+    return mockUpstream(fullPage(), 200);
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const response = await worker.fetch(
+    makeRequest('productId=256302943466835132&pages=9', '/api/reviews'),
+    BASE_ENV
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(requestedPages, ['1', '2', '3']);
+});
+
+test('reviews endpoint maps upstream 403 to a blocked 502', async (t) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => mockUpstream('forbidden', 403);
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const response = await worker.fetch(
+    makeRequest('productId=256302943466835132', '/api/reviews'),
+    BASE_ENV
+  );
+
+  assert.equal(response.status, 502);
+  const body = await response.json();
+  assert.equal(body.code, 'upstream_blocked');
 });

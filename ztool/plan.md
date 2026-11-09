@@ -88,6 +88,12 @@ Field tetap `estimatedRevenue`; hanya label UI dan dokumentasi yang berubah.
 - UI: sparkline saturation, median price, top-10 share, total sales di panel `Saved`.
 - Minimal snapshot: `saturation`, `median_price`, `top10_sales_share`, `total_sales`.
 
+## 5. Review health + social proof
+
+- Worker: `GET /api/reviews?productId=...&productType=...&pages=1`; cache 6 jam; payload `summary`, `product`, `reviews`, `media`.
+- Frontend: Review Health card dari seed top product; badge review hanya untuk top 3 produk (lazy-load).
+- Fallback: review UI disembunyikan jika endpoint gagal; produk tanpa review tetap menampilkan konteks kategori.
+
 ## Verifikasi
 
 1. `cd ztool/worker && node --test`
@@ -109,6 +115,8 @@ Field tetap `estimatedRevenue`; hanya label UI dan dokumentasi yang berubah.
 - [ ] `promoLabel` dan `promoShare` tidak ada di payload worker.
 - [ ] UI tidak menampilkan kode/metrik promo.
 - [ ] Semua label revenue memakai `Est. gross revenue/mo`.
+- [ ] Review Health card dan social proof top 3 produk tampil.
+- [ ] `/api/reviews` mengembalikan summary, product, preview, dan cache 6 jam.
 - [ ] Verdict niche dan caveat data tampil.
 - [ ] Filter produk dan profit estimator berfungsi.
 - [ ] Watchlist bisa save/load/remove dan membandingkan minimal 2 niche.
